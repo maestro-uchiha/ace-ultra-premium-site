@@ -1,83 +1,92 @@
-<#
-Amaterasu Static Deploy (ASD) — Bake Script
-#>
+# ============================================
+#  Amaterasu Static Deploy (ASD) - bake.ps1
+# ============================================
 
-Write-Host "[Amaterasu Static Deploy] Baking…"
+Write-Host "[Amaterasu Static Deploy] Starting bake..."
 
-# ===== Inputs / defaults (CLI args override bake-config.json) =====
-param(
-    [string]$Brand,
-    [string]$Money
-)
-
-if (-not $Brand -and (Test-Path "bake-config.json")) {
-    $conf = Get-Content "bake-config.json" -Raw | ConvertFrom-Json
-    $Brand = $conf.brand
-    $Money = $conf.url
+# ===== Version banner =====
+$asdVer = ""
+if (Test-Path "VERSION") {
+    $asdVer = Get-Content "VERSION" -Raw
+} elseif (Test-Path "$PSScriptRoot\..\VERSION") {
+    $asdVer = Get-Content "$PSScriptRoot\..\VERSION" -Raw
+}
+if ($asdVer) {
+    Write-Host "[Amaterasu Static Deploy] Version $asdVer"
+} else {
+    Write-Host "[Amaterasu Static Deploy] Version (unknown)"
 }
 
-if (-not $Brand) { $Brand = "{{BRAND}}" }
-if (-not $Money) { $Money = "https://YOUR-DOMAIN.com" }
-$Year = (Get-Date).Year
+# ===== Inputs / defaults =====
+param(
+    [string]$BRAND,
+    [string]$MONEY
+)
 
-Write-Host "[ASD] BRAND='$Brand' MONEY='$Money' YEAR=$Year"
+if (-not $BRAND -and (Test-Path "bake-config.json")) {
+    $BRAND = (Get-Content "bake-config.json" -Raw | ConvertFrom-Json).brand
+}
+if (-not $MONEY -and (Test-Path "bake-config.json")) {
+    $MONEY = (Get-Content "bake-config.json" -Raw | ConvertFrom-Json).url
+}
+if (-not $BRAND) { $BRAND = "{{BRAND}}" }
+if (-not $MONEY) { $MONEY = "https://YOUR-DOMAIN.com" }
+$YEAR = (Get-Date).Year
+
+Write-Host "[ASD] BRAND='$BRAND' MONEY='$MONEY' YEAR=$YEAR"
 
 # ===== Load partials =====
-$HeadPartial = Get-Content "partials/head-seo.html" -Raw
-$NavPartial  = Get-Content "partials/nav.html" -Raw
-$FootPartial = Get-Content "partials/footer.html" -Raw
+$headPartial = (Get-Content "partials/head-seo.html" -Raw)
+$navPartial  = (Get-Content "partials/nav.html" -Raw)
+$footPartial = (Get-Content "partials/footer.html" -Raw)
 
 # ===== Replacement function =====
-function Bake-File($file) {
-    if (-not (Test-Path $file)) { return }
+function Apply-Template {
+    param($file)
 
     $content = Get-Content $file -Raw
-    $content = $content -replace '<!--#include virtual="partials/head-seo.html" -->', $HeadPartial
-    $content = $content -replace '<!--#include virtual="partials/nav.html" -->', $NavPartial
-    $content = $content -replace '<!--#include virtual="partials/footer.html" -->', $FootPartial
-    $content = $content -replace '\{\{BRAND\}\}', $Brand
-    $content = $content -replace '\{\{MONEY\}\}', $Money
-    $content = $content -replace '\{\{YEAR\}\}', $Year
+    $content = $content -replace '<!--#include virtual="partials/head-seo.html" -->', $headPartial
+    $content = $content -replace '<!--#include virtual="partials/nav.html" -->', $navPartial
+    $content = $content -replace '<!--#include virtual="partials/footer.html" -->', $footPartial
+    $content = $content -replace '{{BRAND}}', $BRAND
+    $content = $content -replace '{{MONEY}}', $MONEY
+    $content = $content -replace '{{YEAR}}', $YEAR
 
     Set-Content $file $content
-    Write-Host "[ASD] Baked $file"
 }
 
 # ===== Process root HTML files =====
-foreach ($f in @("index.html","about.html","contact.html","sitemap.html","404.html")) {
-    Bake-File $f
+Get-ChildItem -Path . -Include index.html,about.html,contact.html,sitemap.html,404.html | ForEach-Object {
+    Apply-Template $_.FullName
 }
 
 # ===== Process legal pages =====
-foreach ($f in @("legal/privacy.html","legal/terms.html","legal/disclaimer.html")) {
-    Bake-File $f
+Get-ChildItem -Path legal -Include privacy.html,terms.html,disclaimer.html -ErrorAction SilentlyContinue | ForEach-Object {
+    Apply-Template $_.FullName
 }
 
 # ===== Process blog posts =====
-Get-ChildItem "blog\*.html" | ForEach-Object {
-    if ($_.Name -ne "index.html") {
-        Bake-File $_.FullName
-    }
+Get-ChildItem -Path blog -Include *.html -ErrorAction SilentlyContinue | ForEach-Object {
+    Apply-Template $_.FullName
 }
 
-# ===== Update config.json (optional) =====
+# ===== Update config.json =====
 if (Test-Path "config.json") {
     $c = Get-Content "config.json" -Raw | ConvertFrom-Json
-    $c.brand     = $Brand
-    $c.moneySite = $Money
+    $c.brand = $BRAND
+    $c.moneySite = $MONEY
     $c | ConvertTo-Json -Depth 6 | Set-Content "config.json"
-    Write-Host "[ASD] Updated config.json"
 }
 
-# ===== Build blog index (extract <title>, use file modified date) =====
+# ===== Build blog index =====
 $posts = @()
-Get-ChildItem "blog\*.html" | Where-Object { $_.Name -ne "index.html" } | ForEach-Object {
-    $content = Get-Content $_.FullName -Raw
-    $titleMatch = [regex]::Match($content, '<title>(.*?)</title>', 'IgnoreCase')
-    $title = if ($titleMatch.Success) { $titleMatch.Groups[1].Value } else { '(no title)' }
-
-    $lastWrite = $_.LastWriteTime.ToString("yyyy-MM-dd")
+Get-ChildItem "blog\*.html" -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "index.html" } | ForEach-Object {
+    $filePath = $_.FullName
     $rel = "blog/$($_.Name)"
+    $html = Get-Content $filePath -Raw
+    $m = [regex]::Match($html, '<title>(.*?)</title>', 'IgnoreCase')
+    $title = if ($m.Success) { $m.Groups[1].Value } else { "(no title)" }
+    $lastWrite = $_.LastWriteTime.ToString("yyyy-MM-dd")
 
     $posts += "<li><a href='/$rel'>$title</a><small> — $lastWrite</small></li>"
 }
@@ -88,7 +97,6 @@ if (Test-Path "blog/index.html") {
     $bi = [regex]::Replace($bi, '(?s)<!-- POSTS_START -->.*?<!-- POSTS_END -->',
         "<!-- POSTS_START -->`n$joined`n<!-- POSTS_END -->")
     Set-Content "blog/index.html" $bi
-    Write-Host "[ASD] Blog index updated."
 }
 
 Write-Host "[Amaterasu Static Deploy] Done."
