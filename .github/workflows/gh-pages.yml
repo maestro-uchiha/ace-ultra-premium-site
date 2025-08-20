@@ -23,10 +23,10 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
-      - name: Upload artifact
+      - name: Upload baked site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: './parametric-static'
 
       - name: Deploy to GitHub Pages
         id: deployment
