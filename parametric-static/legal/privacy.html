@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!--#include virtual="partials/head-seo.html" -->
+  <title>Privacy Policy - {{BRAND}}</title>
+  <link rel="canonical" href="https://YOUR-DOMAIN.example/legal/privacy.html" />
+  <meta name="description" content="How {{BRAND}} handles information and privacy." />
+
+  <!-- Schema: WebPage + Breadcrumbs -->
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"WebPage",
+    "name":"Privacy Policy — {{BRAND}}",
+    "url":"https://YOUR-DOMAIN.example/legal/privacy.html"
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"BreadcrumbList",
+    "itemListElement":[
+      {"@type":"ListItem","position":1,"name":"Home","item":"https://YOUR-DOMAIN.example/"},
+      {"@type":"ListItem","position":2,"name":"Privacy Policy","item":"https://YOUR-DOMAIN.example/legal/privacy.html"}
+    ]
+  }
+  </script>
+</head>
+<body>
+  <!--#include virtual="partials/nav.html" -->
+  <main class="wrap">
+    <h1>Privacy Policy</h1>
+    <p>We do not sell personal information. If you contact us, we use your message solely to respond.</p>
+  </main>
+  <!--#include virtual="partials/footer.html" -->
+</body>
+</html>

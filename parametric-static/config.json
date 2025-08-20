@@ -1,0 +1,11 @@
+{
+  "site": {
+    "name": "{{BRAND}}",
+    "url": "https://YOUR-DOMAIN.example",
+    "description": "Premium {{BRAND}} – quality, reliability, trust."
+  },
+  "author": {
+    "name": "{{BRAND}} Team",
+    "email": "support@YOUR-DOMAIN.com"
+  }
+}

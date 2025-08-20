@@ -1,0 +1,30 @@
+# Normalize text files; keep LF in repo by default
+* text=auto
+
+# POSIX shell scripts must be LF
+*.sh     text eol=lf
+*.bash   text eol=lf
+
+# Windows scripts prefer CRLF
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+*.ps1    text eol=crlf
+
+# Web/text files → LF (portable)
+*.html   text eol=lf
+*.css    text eol=lf
+*.js     text eol=lf
+*.json   text eol=lf
+*.xml    text eol=lf
+*.yml    text eol=lf
+*.toml   text eol=lf
+*.md     text eol=lf
+*.txt    text eol=lf
+
+# Binary files (never touch line endings)
+*.jpg    binary
+*.jpeg   binary
+*.png    binary
+*.webp   binary
+*.ico    binary
+*.zip    binary

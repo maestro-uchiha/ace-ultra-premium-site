@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!--#include virtual="partials/head-seo.html" -->
+  <title>HTML Sitemap - {{BRAND}}</title>
+  <link rel="canonical" href="https://YOUR-DOMAIN.example/sitemap.html" />
+  <meta name="description" content="Quick links to all key pages on {{BRAND}}." />
+
+  <!-- Schema: WebPage + Breadcrumbs -->
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"WebPage",
+    "name":"HTML Sitemap — {{BRAND}}",
+    "url":"https://YOUR-DOMAIN.example/sitemap.html"
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"BreadcrumbList",
+    "itemListElement":[
+      {"@type":"ListItem","position":1,"name":"Home","item":"https://YOUR-DOMAIN.example/"},
+      {"@type":"ListItem","position":2,"name":"Sitemap","item":"https://YOUR-DOMAIN.example/sitemap.html"}
+    ]
+  }
+  </script>
+</head>
+<body>
+  <!--#include virtual="partials/nav.html" -->
+  <main class="wrap">
+    <h1>HTML Sitemap</h1>
+    <ul>
+      <li><a href="/index.html">Home</a></li>
+      <li><a href="/blog/">Blog</a></li>
+      <li><a href="/about.html">About Us</a></li>
+      <li><a href="/contact.html">Contact Us</a></li>
+      <li><a href="/legal/privacy.html">Privacy Policy</a></li>
+      <li><a href="/legal/terms.html">Terms &amp; Conditions</a></li>
+      <li><a href="/legal/disclaimer.html">Disclaimer</a></li>
+    </ul>
+  </main>
+  <!--#include virtual="partials/footer.html" -->
+</body>
+</html>

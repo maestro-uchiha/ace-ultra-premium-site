@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>{{BRAND}} Blog</title>
+    <link>https://YOUR-DOMAIN.example/blog/</link>
+    <description>Updates and articles from {{BRAND}}.</description>
+    <language>en-us</language>
+    <item>
+      <title>Why {{BRAND}}?</title>
+      <link>https://YOUR-DOMAIN.example/blog/first-post.html</link>
+      <guid>https://YOUR-DOMAIN.example/blog/first-post.html</guid>
+      <pubDate>Tue, 19 Aug 2025 10:00:00 GMT</pubDate>
+      <description>A brief introduction to the brand and quality standards.</description>
+    </item>
+  </channel>
+</rss>

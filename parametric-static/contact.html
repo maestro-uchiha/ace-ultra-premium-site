@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!--#include virtual="partials/head-seo.html" -->
+  <title>Contact Us - {{BRAND}}</title>
+  <link rel="canonical" href="https://YOUR-DOMAIN.example/contact.html" />
+  <meta name="description" content="Contact {{BRAND}} for questions, feedback, or partnerships." />
+
+  <!-- Schema: ContactPage + Organization.contactPoint + Breadcrumbs -->
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"ContactPage",
+    "name":"Contact {{BRAND}}",
+    "url":"https://YOUR-DOMAIN.example/contact.html"
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"Organization",
+    "name":"{{BRAND}}",
+    "url":"https://YOUR-DOMAIN.example/",
+    "contactPoint":[
+      {
+        "@type":"ContactPoint",
+        "contactType":"customer support",
+        "email":"support@YOUR-DOMAIN.com",
+        "url":"https://YOUR-DOMAIN.example/contact.html",
+        "areaServed":"US"
+      }
+    ]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"BreadcrumbList",
+    "itemListElement":[
+      {"@type":"ListItem","position":1,"name":"Home","item":"https://YOUR-DOMAIN.example/"},
+      {"@type":"ListItem","position":2,"name":"Contact","item":"https://YOUR-DOMAIN.example/contact.html"}
+    ]
+  }
+  </script>
+</head>
+<body>
+  <!--#include virtual="partials/nav.html" -->
+  <main class="wrap">
+    <h1>Contact Us</h1>
+    <ul>
+      <li>Email: <a href="mailto:support@YOUR-DOMAIN.com">support@YOUR-DOMAIN.com</a></li>
+      <li>Website: <a href="https://YOUR-DOMAIN.com" target="_blank" rel="noopener">YOUR-DOMAIN.com</a></li>
+    </ul>
+  </main>
+  <!--#include virtual="partials/footer.html" -->
+</body>
+</html>

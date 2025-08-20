@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!--#include virtual="partials/head-seo.html" -->
+  <title>Why Ace Ultra Premium{{BRAND}}?</title>
+  <link rel="canonical" href="https://YOUR-DOMAIN.example/blog/first-post.html" />
+  <meta name="description" content="Why {{BRAND}} is designed for quality and consistency." />
+
+  <!-- Schema: BlogPosting + Breadcrumbs -->
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"BlogPosting",
+    "headline":"Why {{BRAND}}?",
+    "datePublished":"2025-08-19",
+    "dateModified":"2025-08-19",
+    "author":{"@type":"Organization","name":"{{BRAND}}"},
+    "publisher":{"@type":"Organization","name":"{{BRAND}}"},
+    "mainEntityOfPage":{"@type":"WebPage","@id":"https://YOUR-DOMAIN.example/blog/first-post.html"},
+    "image":"https://YOUR-DOMAIN.example/assets/og.jpg"
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"BreadcrumbList",
+    "itemListElement":[
+      {"@type":"ListItem","position":1,"name":"Home","item":"https://YOUR-DOMAIN.example/"},
+      {"@type":"ListItem","position":2,"name":"Blog","item":"https://YOUR-DOMAIN.example/blog/"},
+      {"@type":"ListItem","position":3,"name":"Why {{BRAND}}?","item":"https://YOUR-DOMAIN.example/blog/first-post.html"}
+    ]
+  }
+  </script>
+</head>
+<body>
+  <!--#include virtual="partials/nav.html" -->
+  <main class="wrap">
+    <h1>Why {{BRAND}}?</h1>
+    <p>{{BRAND}} focuses on safety, consistency, and taste. We keep it simple and transparent.</p>
+    <p>See our catalog at
+      <a href="https://YOUR-DOMAIN.com" rel="dofollow noopener" target="_blank">YOUR-DOMAIN.com</a>.
+    </p>
+  </main>
+  <!--#include virtual="partials/footer.html" -->
+</body>
+</html>
