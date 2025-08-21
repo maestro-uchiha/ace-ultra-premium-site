@@ -1,8 +1,11 @@
 # ============================================
 #  Amaterasu Static Deploy (ASD) - bake.ps1
-#  Wraps pages with layout.html (no partials),
-#  computes per-page PREFIX, rebuilds blog index,
-#  updates config.json (nested schema), writes UTF-8.
+#  Layout-based (no partials), idempotent.
+#  - Extracts original content via markers if present
+#  - Else falls back to <body> and strips old header/nav/footer/SSI
+#  - Computes {{PREFIX}} per page for nested paths
+#  - Rebuilds blog index (relative links in /blog/)
+#  - Updates config.json (nested schema) and writes UTF-8
 # ============================================
 
 param(
@@ -12,7 +15,6 @@ param(
 
 Write-Host "[ASD] Baking site for brand: $Brand, money site: $Money"
 
-# Resolve key paths (this script lives in parametric-static/scripts)
 $RootDir    = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $LayoutPath = Join-Path $RootDir "layout.html"
 $BlogDir    = Join-Path $RootDir "blog"
@@ -65,7 +67,7 @@ $joined
   Write-Host "[ASD] Blog index updated"
 }
 
-# ---- Helper: compute PREFIX for a given file ('' at root, '../' in subdirs)
+# ---- Compute {{PREFIX}} ('' at root, '../' in subdirs)
 function Get-RelPrefix {
   param([string]$FilePath)
   $fileDir = Split-Path $FilePath -Parent
@@ -88,7 +90,6 @@ if (Test-Path $CfgPath) {
 if (-not ($c | Get-Member -Name site   -MemberType NoteProperty)) { $c | Add-Member -NotePropertyName site   -NotePropertyValue ([pscustomobject]@{}) }
 if (-not ($c | Get-Member -Name author -MemberType NoteProperty)) { $c | Add-Member -NotePropertyName author -NotePropertyValue ([pscustomobject]@{}) }
 
-# Keep site.url unless it's the placeholder; set name/description
 $desc = if ($c.site.PSObject.Properties.Name -contains 'description' -and $c.site.description) {
   ($c.site.description -replace '\{\{BRAND\}\}', $Brand)
 } else { "Premium $Brand - quality, reliability, trust." }
@@ -109,33 +110,49 @@ if ($c.author.PSObject.Properties.Name -contains 'name' -and $c.author.name) {
   } else { $c.author.name = ("{0} Team" -f $Brand) }
 }
 
-# Legacy keys for compatibility
+# Legacy keys
 if (-not ($c | Get-Member -Name brand     -MemberType NoteProperty)) { Add-Member -InputObject $c -NotePropertyName brand     -NotePropertyValue $Brand } else { $c.brand     = $Brand }
 if (-not ($c | Get-Member -Name moneySite -MemberType NoteProperty)) { Add-Member -InputObject $c -NotePropertyName moneySite -NotePropertyValue $Money } else { $c.moneySite = $Money }
 
 $c | ConvertTo-Json -Depth 12 | Set-Content -Encoding UTF8 $CfgPath
 Write-Host "[ASD] config.json updated"
 
+# ---- Extract original content safely (markers first, otherwise strip site chrome)
+function Extract-Content {
+  param([string]$raw)
+  # Prefer markers if present (idempotent re-bake)
+  $mark = [regex]::Match($raw, '(?is)<!--\s*ASD:CONTENT_START\s*-->(.*?)<!--\s*ASD:CONTENT_END\s*-->')
+  if ($mark.Success) { return $mark.Groups[1].Value }
+
+  # Else fallback to body inner HTML if it's a full HTML doc
+  $body = [regex]::Match($raw, '(?is)<body[^>]*>(.*?)</body>')
+  if ($body.Success) { $raw = $body.Groups[1].Value }
+
+  # Strip any old SSI includes and site chrome
+  $raw = [regex]::Replace($raw, '(?is)<!--#include\s+virtual="partials/.*?-->', '')
+  $raw = [regex]::Replace($raw, '(?is)<header\b[^>]*>.*?</header>', '')
+  $raw = [regex]::Replace($raw, '(?is)<nav\b[^>]*>.*?</nav>', '')
+  $raw = [regex]::Replace($raw, '(?is)<footer\b[^>]*>.*?</footer>', '')
+  return $raw
+}
+
 # ---- Wrap every HTML (except layout.html) using layout and per-page PREFIX
 Get-ChildItem -Path $RootDir -Recurse -File |
   Where-Object { $_.Extension -eq ".html" -and $_.FullName -ne $LayoutPath } |
   ForEach-Object {
     $raw = Get-Content $_.FullName -Raw
-
-    # If the file has a full HTML document, use only the body content
-    $bodyM = [regex]::Match($raw, '(?is)<body[^>]*>(.*?)</body>')
-    if ($bodyM.Success) { $raw = $bodyM.Groups[1].Value }
+    $content = Extract-Content $raw
 
     # Title from first <h1>, fallback to filename
-    $tm = [regex]::Match($raw, '(?is)<h1[^>]*>(.*?)</h1>')
+    $tm = [regex]::Match($content, '(?is)<h1[^>]*>(.*?)</h1>')
     $pageTitle = if ($tm.Success) { $tm.Groups[1].Value } else { $_.BaseName }
 
     # Compute prefix depth
     $prefix = Get-RelPrefix -FilePath $_.FullName
 
-    # Build final page
+    # Build final page with markers embedded
     $final = $Layout
-    $final = $final.Replace('{{CONTENT}}', $raw)
+    $final = $final.Replace('{{CONTENT}}', $content)
     $final = $final.Replace('{{TITLE}}', $pageTitle)
     $final = $final.Replace('{{BRAND}}', $Brand)
     $final = $final.Replace('{{DESCRIPTION}}', $desc)
