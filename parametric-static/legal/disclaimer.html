@@ -15,23 +15,30 @@
 </head>
 <body>
   <header>
-    <h1><a href="../index.html">Ace Ultra Premium</a></h1>
-    <nav>
-      <ul>
-        <li><a href="../index.html">Home</a></li>
-        <li><a href="../blog/">Blog</a></li>
-        <li><a href="../about.html">About</a></li>
-        <li><a href="../contact.html">Contact</a></li>
-        <li><a href="../legal/privacy.html">Privacy</a></li>
-        <li><a href="../legal/terms.html">Terms</a></li>
-        <li><a href="../legal/disclaimer.html">Disclaimer</a></li>
-        <li><a href="../sitemap.html">Sitemap</a></li>
-      </ul>
-    </nav>
-  </header>
+  <h1><a href="../index.html">Ace Ultra Premium</a></h1>
+
+  <!-- Mobile toggle -->
+  <button id="navToggle" class="nav-toggle"
+          aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">â˜°</button>
+
+  <!-- Collapsible nav -->
+  <nav id="site-nav">
+    <ul>
+      <li><a href="../index.html">Home</a></li>
+      <li><a href="../blog/">Blog</a></li>
+      <li><a href="../about.html">About</a></li>
+      <li><a href="../contact.html">Contact</a></li>
+      <li><a href="../legal/privacy.html">Privacy</a></li>
+      <li><a href="../legal/terms.html">Terms</a></li>
+      <li><a href="../legal/disclaimer.html">Disclaimer</a></li>
+      <li><a href="../sitemap.html">Sitemap</a></li>
+    </ul>
+  </nav>
+</header>
 
   <main>
     <!-- ASD:CONTENT_START -->
+    
     
     
     
@@ -54,12 +61,35 @@
     
     
     
+    
     <!-- ASD:CONTENT_END -->
   </main>
 
   <footer>
     <p>&copy; 2025 <a href="../index.html">Ace Ultra Premium</a>. All rights reserved.</p>
   </footer>
+  <script>
+    (function () {
+      var btn = document.getElementById('navToggle');
+      var nav = document.getElementById('site-nav');
+      if (!btn || !nav) return;
+
+      function set(open) {
+        btn.setAttribute('aria-expanded', open);
+        nav.classList.toggle('open', open);
+      }
+      btn.addEventListener('click', function () {
+        var open = btn.getAttribute('aria-expanded') !== 'true';
+        set(open);
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') set(false);
+      });
+      nav.addEventListener('click', function (e) {
+        if (e.target && e.target.tagName === 'A') set(false);
+      });
+    })();
+  </script>
 </body>
 </html>
 
