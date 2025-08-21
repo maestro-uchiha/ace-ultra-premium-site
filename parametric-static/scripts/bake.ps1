@@ -6,6 +6,7 @@
 #  - Computes {{PREFIX}} per page for nested paths
 #  - Rebuilds blog index (relative links in /blog/)
 #  - Updates config.json (nested schema) and writes UTF-8
+#  - Normalizes dash-like characters/entities/mojibake to "|"
 # ============================================
 
 param(
@@ -26,6 +27,36 @@ if (-not (Test-Path $LayoutPath)) {
   exit 1
 }
 $Layout = Get-Content $LayoutPath -Raw
+
+# --- Normalize dashes (Unicode, entities, and common mojibake) to a pipe "|"
+function Normalize-DashesToPipe {
+  param([string]$s)
+  if ($null -eq $s) { return $s }
+  $pipe = '|'
+
+  # Proper Unicode dashes
+  $s = $s.Replace([string][char]0x2013, $pipe)  # en dash
+  $s = $s.Replace([string][char]0x2014, $pipe)  # em dash
+
+  # HTML entities that might appear in content
+  $s = $s.Replace('&ndash;', $pipe)
+  $s = $s.Replace('&mdash;', $pipe)
+
+  # Mojibake sequences (UTF-8 bytes read as Latin-1/CP1252), built from codepoints:
+  # en dash (E2 80 93) -> three chars: 0x00E2, 0x0080, 0x0093
+  $seq_en  = [string]([char]0x00E2) + [char]0x0080 + [char]0x0093
+  # em dash (E2 80 94) -> three chars: 0x00E2, 0x0080, 0x0094
+  $seq_em  = [string]([char]0x00E2) + [char]0x0080 + [char]0x0094
+  $s = $s.Replace($seq_en, $pipe).Replace($seq_em, $pipe)
+
+  # Double-mojibake variants sometimes appear after copy/paste chains:
+  # "Ã¢â‚¬â€œ" and "Ã¢â‚¬â€�"
+  $seq2_en = [string]([char]0x00C3)+[char]0x0082+[char]0x00C2+[char]0x00A2+[char]0x00E2+[char]0x0080+[char]0x0093
+  $seq2_em = [string]([char]0x00C3)+[char]0x0082+[char]0x00C2+[char]0x00A2+[char]0x00E2+[char]0x0080+[char]0x0094
+  $s = $s.Replace($seq2_en, $pipe).Replace($seq2_em, $pipe)
+
+  return $s
+}
 
 # Optional: load bake-config.json if args not provided
 $BakeCfg = Join-Path $RootDir "bake-config.json"
@@ -48,9 +79,10 @@ if (Test-Path $BlogIndex) {
       $html  = Get-Content $_.FullName -Raw
       $m     = [regex]::Match($html, '<title>(.*?)</title>', 'IgnoreCase')
       $title = if ($m.Success) { $m.Groups[1].Value } else { $_.BaseName }
+      $title = Normalize-DashesToPipe $title
       $date  = $_.LastWriteTime.ToString('yyyy-MM-dd')
       $rel   = $_.Name  # relative to /blog/
-      $li    = ('<li><a href="./{0}">{1}</a><small> &mdash; {2}</small></li>' -f $rel, $title, $date)
+      $li    = ('<li><a href="./{0}">{1}</a><small> | {2}</small></li>' -f $rel, $title, $date)
       $posts.Add($li)
     }
 
@@ -159,6 +191,9 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $final = $final.Replace('{{MONEY}}', $Money)
     $final = $final.Replace('{{YEAR}}', "$Year")
     $final = $final.Replace('{{PREFIX}}', $prefix)
+
+    # Normalize any dash-like text to a plain pipe
+    $final = Normalize-DashesToPipe $final
 
     Set-Content -Encoding UTF8 $_.FullName $final
     Write-Host ("[ASD] Wrapped {0} (prefix='{1}')" -f $_.FullName.Substring($RootDir.Length+1), $prefix)
