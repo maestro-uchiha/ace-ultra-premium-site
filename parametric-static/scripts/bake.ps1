@@ -152,19 +152,32 @@ Write-Host "[ASD] config.json updated"
 # ---- Extract original content safely (markers first, otherwise strip site chrome)
 function Extract-Content {
   param([string]$raw)
-  # Prefer markers if present (idempotent re-bake)
+
+  # 1) Prefer ASD markers (idempotent re-bake)
   $mark = [regex]::Match($raw, '(?is)<!--\s*ASD:CONTENT_START\s*-->(.*?)<!--\s*ASD:CONTENT_END\s*-->')
-  if ($mark.Success) { return $mark.Groups[1].Value }
+  if ($mark.Success) {
+    $raw = $mark.Groups[1].Value
+  } else {
+    # 2) Else fallback to body inner HTML if it's a full HTML document
+    $body = [regex]::Match($raw, '(?is)<body[^>]*>(.*?)</body>')
+    if ($body.Success) { $raw = $body.Groups[1].Value }
+  }
 
-  # Else fallback to body inner HTML if it's a full HTML doc
-  $body = [regex]::Match($raw, '(?is)<body[^>]*>(.*?)</body>')
-  if ($body.Success) { $raw = $body.Groups[1].Value }
-
-  # Strip any old SSI includes and site chrome
+  # 3) Strip any old includes and site chrome
   $raw = [regex]::Replace($raw, '(?is)<!--#include\s+virtual="partials/.*?-->', '')
   $raw = [regex]::Replace($raw, '(?is)<header\b[^>]*>.*?</header>', '')
   $raw = [regex]::Replace($raw, '(?is)<nav\b[^>]*>.*?</nav>', '')
   $raw = [regex]::Replace($raw, '(?is)<footer\b[^>]*>.*?</footer>', '')
+
+  # 4) UNWRAP <main> from source pages (keep inner HTML, remove tags)
+  #    - If a <main> exists, take the FIRST one's inner HTML
+  $m = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
+  if ($m.Success) {
+    $raw = $m.Groups[1].Value
+  }
+  #    - Remove any stray <main> tags that might remain
+  $raw = [regex]::Replace($raw, '(?is)</?main\b[^>]*>', '')
+
   return $raw
 }
 
