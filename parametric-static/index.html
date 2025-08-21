@@ -1,17 +1,25 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
   <head>
-    <!--#include virtual="partials/head-seo.html" -->
-    <title>{{BRAND}} - Home</title>
+    <!-- Shared head partial (page sets its own <title>, description, canonical) -->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="index,follow" />
+<link rel="icon" href="/assets/favicon.ico" />
+<link rel="stylesheet" href="/assets/style.css" />
+<meta property="og:image" content="/assets/og.jpg" />
+<meta name="twitter:card" content="summary_large_image" />
+
+    <title>Ace Ultra Premium - Home</title>
     <link rel="canonical" href="https://YOUR-DOMAIN.example/" />
-    <meta name="description" content="Discover the premium {{BRAND}} delivering quality, reliability, and trust. Built with precision for true enthusiasts." />
+    <meta name="description" content="Discover the premium Ace Ultra Premium delivering quality, reliability, and trust. Built with precision for true enthusiasts." />
 
     <!-- Organization -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "Organization",
-      "name": "{{BRAND}}",
+      "name": "Ace Ultra Premium",
       "url": "https://YOUR-DOMAIN.example/",
       "logo": "https://YOUR-DOMAIN.example/assets/og.jpg"
     }
@@ -22,22 +30,45 @@
     {
       "@context": "https://schema.org",
       "@type": "WebSite",
-      "name": "{{BRAND}}",
+      "name": "Ace Ultra Premium",
       "url": "https://YOUR-DOMAIN.example/"
     }
     </script>
   </head>
   <body>
-    <!--#include virtual="partials/nav.html" -->
+    <nav class="site-nav wrap">
+  <a class="brand" href="/index.html">Ace Ultra Premium</a>
+  <a href="/blog/">Blog</a>
+  <a href="/about.html">About</a>
+  <a href="/contact.html">Contact</a>
+</nav>
+
 
     <main class="wrap">
-      <h1>Welcome to {{BRAND}}</h1>
+      <h1>Welcome to Ace Ultra Premium</h1>
       <p>Discover the premium brand delivering quality, reliability, and trust. Built with precision for true enthusiasts.</p>
       <p>Explore products at
         <a href="https://YOUR-DOMAIN.com" rel="dofollow noopener" target="_blank">YOUR-DOMAIN.com</a>.
       </p>
     </main>
 
-    <!--#include virtual="partials/footer.html" -->
+    <footer class="site-footer">
+  <div class="wrap">
+    <p>
+      <a href="/index.html">Home</a> Â·
+      <a href="/blog/">Blog</a> Â·
+      <a href="/about.html">About</a> Â·
+      <a href="/contact.html">Contact</a> Â·
+      <a href="/legal/privacy.html">Privacy</a> Â·
+      <a href="/legal/terms.html">Terms</a> Â·
+      <a href="/legal/disclaimer.html">Disclaimer</a> Â·
+      <a href="/sitemap.html">Sitemap</a>
+    </p>
+    <p>Â© 2025 Ace Ultra Premium. All rights reserved.</p>
+  </div>
+</footer>
+
   </body>
 </html>
+
+
