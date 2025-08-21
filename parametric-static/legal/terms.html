@@ -1,17 +1,25 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
-  <!--#include virtual="partials/head-seo.html" -->
-  <title>Terms &amp; Conditions - {{BRAND}}</title>
+  <!-- Shared head partial (page sets its own <title>, description, canonical) -->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="index,follow" />
+<link rel="icon" href="/assets/favicon.ico" />
+<link rel="stylesheet" href="/assets/style.css" />
+<meta property="og:image" content="/assets/og.jpg" />
+<meta name="twitter:card" content="summary_large_image" />
+
+  <title>Terms &amp; Conditions - Ace Ultra Premium</title>
   <link rel="canonical" href="https://YOUR-DOMAIN.example/legal/terms.html" />
-  <meta name="description" content="Website usage terms for {{BRAND}}." />
+  <meta name="description" content="Website usage terms for Ace Ultra Premium." />
 
   <!-- Schema: WebPage + Breadcrumbs -->
   <script type="application/ld+json">
   {
     "@context":"https://schema.org",
     "@type":"WebPage",
-    "name":"Terms & Conditions — {{BRAND}}",
+    "name":"Terms & Conditions â€” Ace Ultra Premium",
     "url":"https://YOUR-DOMAIN.example/legal/terms.html"
   }
   </script>
@@ -27,11 +35,34 @@
   </script>
 </head>
 <body>
-  <!--#include virtual="partials/nav.html" -->
+  <nav class="site-nav wrap">
+  <a class="brand" href="/index.html">Ace Ultra Premium</a>
+  <a href="/blog/">Blog</a>
+  <a href="/about.html">About</a>
+  <a href="/contact.html">Contact</a>
+</nav>
+
   <main class="wrap">
     <h1>Terms &amp; Conditions</h1>
     <p>Use of this website implies agreement with applicable laws and these terms. Content is provided as-is.</p>
   </main>
-  <!--#include virtual="partials/footer.html" -->
+  <footer class="site-footer">
+  <div class="wrap">
+    <p>
+      <a href="/index.html">Home</a> Â·
+      <a href="/blog/">Blog</a> Â·
+      <a href="/about.html">About</a> Â·
+      <a href="/contact.html">Contact</a> Â·
+      <a href="/legal/privacy.html">Privacy</a> Â·
+      <a href="/legal/terms.html">Terms</a> Â·
+      <a href="/legal/disclaimer.html">Disclaimer</a> Â·
+      <a href="/sitemap.html">Sitemap</a>
+    </p>
+    <p>Â© 2025 Ace Ultra Premium. All rights reserved.</p>
+  </div>
+</footer>
+
 </body>
 </html>
+
+

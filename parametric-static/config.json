@@ -1,11 +1,13 @@
-{
-  "site": {
-    "name": "{{BRAND}}",
-    "url": "https://YOUR-DOMAIN.example",
-    "description": "Premium {{BRAND}} – quality, reliability, trust."
-  },
-  "author": {
-    "name": "{{BRAND}} Team",
-    "email": "support@YOUR-DOMAIN.com"
-  }
+﻿{
+    "site":  {
+                 "name":  "Ace Ultra Premium",
+                 "url":  "",
+                 "description":  "Premium Ace Ultra Premium â€“ quality, reliability, trust."
+             },
+    "author":  {
+                   "name":  "Ace Ultra Premium Team",
+                   "email":  "support@YOUR-DOMAIN.com"
+               },
+    "brand":  "Ace Ultra Premium",
+    "moneySite":  "https://ace-ultra-premium.com"
 }
