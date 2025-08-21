@@ -8,11 +8,12 @@
   --primary: #ffcc00;     /* nav link color */
   --link: #0a66ff;        /* body link color */
   --border: #e5e5e5;
-  --max: 960px;           /* content width cap */
 }
 
-/* Layout + typography */
+/* ====== Layout & typography ====== */
 * { box-sizing: border-box; }
+
+html, body { height: 100%; }
 html { font-size: 16px; }
 @media (max-width: 720px){ html { font-size: 15px; } }
 @media (max-width: 480px){ html { font-size: 14px; } }
@@ -24,6 +25,14 @@ body {
   line-height: 1.6;
   color: var(--text);
   background: var(--bg);
+
+  /* Sticky footer layout */
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+@supports (height: 100svh) {
+  body { min-height: 100svh; }
 }
 
 /* ====== Header / Sticky / Nav / Footer ====== */
@@ -53,10 +62,8 @@ header h1 {
   line-height: 1.2;
   font-size: clamp(1.25rem, 2vw + 1rem, 2rem);
 }
-
 header h1 a { color: #fff; text-decoration: none; }
 
-/* Hamburger toggle button (shown on small screens) */
 /* Hamburger button: pure CSS bars (ASCII-only, no symbols) */
 .nav-toggle {
   appearance: none;
@@ -79,16 +86,12 @@ header h1 a { color: #fff; text-decoration: none; }
   background: #fff;
   border-radius: 1px;
 }
-
-/* Optional: morph to "X" when open (nice touch, still ASCII-only) */
 .nav-toggle.is-active .bar:nth-child(1) { transform: translateY(7px) rotate(45deg); }
 .nav-toggle.is-active .bar:nth-child(2) { opacity: 0; }
 .nav-toggle.is-active .bar:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
 .nav-toggle .bar { transition: transform .2s ease, opacity .2s ease; }
 
-.nav-toggle:focus-visible { outline: 2px dashed var(--primary); outline-offset: 2px; }
-
-/* Nav container */
+/* Nav */
 nav { width: 100%; }
 nav ul {
   list-style: none;
@@ -108,18 +111,19 @@ nav a {
 }
 nav a:hover, nav a:focus-visible { text-decoration: underline; outline: none; }
 
-/* --- Collapsible behavior (mobile) --- */
+/* Collapsible behavior (mobile-first) */
 #site-nav {
   overflow: hidden;
-  max-height: 0;        /* collapsed by default on mobile */
+  max-height: 0;                /* collapsed by default on mobile */
   transition: max-height .25s ease;
 }
-#site-nav.open { max-height: 60vh; } /* expanded */
+#site-nav.open { max-height: 60vh; }
+
+/* Desktop/tablet: keep nav expanded; keep button visible too */
 @media (min-width: 721px){
-  /* Desktop/tablet: nav inline, no collapse, hide toggle */
-  .nav-toggle { display: none; }
-  #site-nav { max-height: none; }
+  #site-nav { max-height: none; }  /* expanded on desktop */
   nav { width: auto; }
+  .nav-toggle { margin-left: auto; } /* shove button right */
 }
 
 /* Footer */
@@ -130,22 +134,25 @@ footer {
 footer p { margin: .25rem 0; opacity: .9; }
 footer a { color: #fff; text-decoration: none; font-weight: bold; }
 
-/* ====== Main content area ====== */
+/* ====== Main content (full width) ====== */
 main {
-  padding: 2rem 1rem;
-  max-width: var(--max);
-  margin: 0 auto;
+  flex: 1 0 auto;               /* fill remaining space so footer sits at bottom */
+  width: 100%;
+  max-width: none;              /* remove centered column cap */
+  padding: 2rem 1rem;           /* comfy gutters */
+  margin: 0;
 }
-@media (max-width: 520px){ main { padding: 1.25rem 1rem; } }
+@media (max-width: 520px){
+  main { padding: 1.25rem 1rem; }
+}
 
-/* Headings and text rhythm */
+/* Headings & text rhythm */
 h1 { margin: 0 0 .5rem; }
 h2 { margin: 1.5rem 0 .5rem; }
 h3 { margin: 1.25rem 0 .5rem; }
 h1 { font-size: clamp(1.5rem, 3vw + .5rem, 2.25rem); line-height: 1.2; }
 h2 { font-size: clamp(1.25rem, 2vw + .25rem, 1.75rem); }
 h3 { font-size: clamp(1.125rem, 1.5vw + .25rem, 1.25rem); }
-
 p, ul, ol, blockquote { margin-bottom: 1rem; }
 
 /* Body links */
@@ -185,23 +192,20 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 /* Accessibility */
 :focus-visible { outline: 2px dashed var(--primary); outline-offset: 2px; }
 
+/* Reduce motion */
+@media (prefers-reduced-motion: reduce){
+  * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
+}
+
 /* === Safety override: always show the hamburger button on every page === */
-/* Beats any stray inline <style> on root pages */
 header .nav-toggle {
   display: flex !important;
   visibility: visible !important;
   opacity: 1 !important;
   z-index: 1001;
 }
-
-/* Ensure bars are visible even if something earlier messed with them */
 header .nav-toggle .bar {
   display: block !important;
   height: 2px !important;
   background: #fff !important;
-}
-
-/* Reduce motion */
-@media (prefers-reduced-motion: reduce){
-  * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
 }
