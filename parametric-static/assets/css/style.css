@@ -32,3 +32,9 @@ main {
   max-width: 800px;
   margin: auto;
 }
+
+footer a, header h1.a {
+  color: #fff;
+  text-decoration: none;
+  font-weight: bold;
+}
