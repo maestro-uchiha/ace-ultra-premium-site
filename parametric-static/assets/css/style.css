@@ -57,17 +57,35 @@ header h1 {
 header h1 a { color: #fff; text-decoration: none; }
 
 /* Hamburger toggle button (shown on small screens) */
+/* Hamburger button: pure CSS bars (ASCII-only, no symbols) */
 .nav-toggle {
   appearance: none;
   border: 1px solid #444;
   background: #111;
   color: #fff;
   border-radius: .5rem;
-  padding: .5rem .65rem;
-  font-size: 1.1rem;
-  line-height: 1;
+  width: 44px;
+  height: 36px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: stretch;
   cursor: pointer;
 }
+.nav-toggle .bar {
+  display: block;
+  height: 2px;
+  background: #fff;
+  border-radius: 1px;
+}
+
+/* Optional: morph to "X" when open (nice touch, still ASCII-only) */
+.nav-toggle.is-active .bar:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.nav-toggle.is-active .bar:nth-child(2) { opacity: 0; }
+.nav-toggle.is-active .bar:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+.nav-toggle .bar { transition: transform .2s ease, opacity .2s ease; }
+
 .nav-toggle:focus-visible { outline: 2px dashed var(--primary); outline-offset: 2px; }
 
 /* Nav container */
