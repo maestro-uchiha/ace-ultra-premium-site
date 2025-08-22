@@ -42,6 +42,5 @@ try {
     if ($cfg.moneySite) { $moneyHint = $cfg.moneySite }
   }
 } catch {}
-
 Write-Host "`n[ASD] Next (manual):"
 Write-Host ("  .\parametric-static\scripts\bake.ps1 -Brand ""{0}"" -Money ""{1}""" -f $brandHint, $moneyHint)
