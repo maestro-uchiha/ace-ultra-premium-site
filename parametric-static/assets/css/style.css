@@ -64,14 +64,16 @@ header h1 {
 }
 header h1 a { color: #fff; text-decoration: none; }
 
-/* Hamburger button: compact, centered, no overflow */
+/* === Make ONLY the X smaller === */
 :root{
-  --nav-btn-w: 40px;    /* button width  */
-  --nav-btn-h: 34px;    /* button height */
-  --nav-pad:   6px;     /* inner padding */
-  --nav-bar-h: 2px;     /* line thickness */
-  --nav-gap:   6px;     /* gap between lines */
-  --nav-tilt:  5px;     /* translate amount when forming X */
+  --nav-btn-w: 40px;      /* button size stays the same */
+  --nav-btn-h: 34px;
+  --nav-pad:   6px;
+  --nav-bar-h: 2px;       /* line thickness (resting) */
+  --nav-gap:   6px;
+  --nav-tilt:  5px;
+  --nav-x-scale: 0.65;    /* <— shrink the X size (0.55–0.75 looks good) */
+  --nav-x-bar-h: 1.5px;   /* <— make X strokes thinner */
 }
 
 .nav-toggle {
@@ -91,7 +93,7 @@ header h1 a { color: #fff; text-decoration: none; }
   cursor: pointer;
   overflow: hidden;                 /* clip any sub-pixel overflow */
   box-sizing: border-box;
-  z-index: 1001;                    /* above nav list */
+  z-index: 1001;
 }
 
 .nav-toggle .bar {
@@ -99,21 +101,26 @@ header h1 a { color: #fff; text-decoration: none; }
   background: #fff;
   border-radius: 1px;
   transform-origin: 50% 50%;       /* rotate around the center */
-  transition: transform .2s ease, opacity .2s ease, background-color .2s ease;
+  transition: transform .2s ease, opacity .2s ease, height .2s ease, background-color .2s ease, width .2s ease, margin .2s ease;
+  width: 100%;
+  margin: 0 auto;                  /* center bars if width changes */
 }
 
-/* X state */
+/* Active (X) state: smaller & thinner lines */
+.nav-toggle.is-active { --nav-bar-h: var(--nav-x-bar-h); }
 .nav-toggle.is-active .bar:nth-child(1) {
-  transform: translateY(var(--nav-tilt)) rotate(45deg);
+  transform: translateY(var(--nav-tilt)) rotate(45deg) scale(var(--nav-x-scale));
+  width: 80%;                      /* optional: also narrow the X a bit */
 }
 .nav-toggle.is-active .bar:nth-child(2) {
   opacity: 0;
 }
 .nav-toggle.is-active .bar:nth-child(3) {
-  transform: translateY(calc(-1 * var(--nav-tilt))) rotate(-45deg);
+  transform: translateY(calc(-1 * var(--nav-tilt))) rotate(-45deg) scale(var(--nav-x-scale));
+  width: 80%;
 }
 
-/* (Keep) Desktop: hide hamburger */
+/* Desktop: keep nav expanded; hide the button */
 @media (min-width: 721px){
   #site-nav { max-height: none; }
   nav { width: auto; }
