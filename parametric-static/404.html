@@ -18,7 +18,41 @@
   <meta name="twitter:card" content="summary_large_image">
 
   <link rel="icon" href="assets/favicon.ico">
-  <link rel="stylesheet" href="assets/css/style.css">
+
+  <!-- CSS: give it an ID so we can rewrite the href when 404 is served from a deep path -->
+  <link id="asdcss" rel="stylesheet" href="assets/css/style.css">
+
+  <!-- Auto-fix CSS path for GitHub Pages deep 404s -->
+  <script>
+    (function(){
+      var link = document.getElementById('asdcss');
+      if (!link) return;
+
+      function probe(url, cb){
+        fetch(url, {method:'HEAD', cache:'no-store'}).then(function(r){ cb(r.ok); })
+          .catch(function(){ cb(false); });
+      }
+
+      var segs = location.pathname.split('/').filter(Boolean);
+      var roots = [];
+      // Build candidates: /user/repo/foo/bar/ -> /user/repo/foo/bar/ .. /user/repo/ .. /
+      for (var i=0; i<=segs.length; i++){
+        var base = '/' + segs.slice(0,i).join('/') + '/';
+        roots.push(base);
+      }
+      roots.reverse();
+
+      (function tryNext(){
+        if (!roots.length) return; // leave as-is if nothing matches
+        var base = roots.shift();
+        var candidate = base + 'assets/css/style.css';
+        probe(candidate, function(ok){
+          if (ok) { link.href = candidate; }
+          else { tryNext(); }
+        });
+      })();
+    })();
+  </script>
 
   <link rel="alternate" type="application/rss+xml" title="Ace Ultra Premium Blog" href="feed.xml">
 </head>
@@ -47,100 +81,30 @@
   </header>
 
   <main>
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-  
-
-  
-    
-  
-
-  
-    
-  
-
-  
     <h1>404 - Not Found</h1>
     <p>That page doesn't exist. <a href="index.html">Return home</a>.</p>
-  
-    
-    
-    
-    
-    
-    
-    
-    
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
   </main>
 
-<footer>
-  <p>
-    <a href="index.html">Home</a> |
-    <a href="blog/">Blog</a> |
-    <a href="about.html">About</a> |
-    <a href="contact.html">Contact</a> |
-    <a href="legal/privacy.html">Privacy</a> |
-    <a href="legal/terms.html">Terms</a> |
-    <a href="sitemap.html">Sitemap</a>
-  </p>
-  <p>&copy; 2025 Ace Ultra Premium. All rights reserved.</p>
-</footer>
+  <footer>
+    <p>
+      <a href="index.html">Home</a> |
+      <a href="blog/">Blog</a> |
+      <a href="about.html">About</a> |
+      <a href="contact.html">Contact</a> |
+      <a href="legal/privacy.html">Privacy</a> |
+      <a href="legal/terms.html">Terms</a> |
+      <a href="sitemap.html">Sitemap</a>
+    </p>
+    <p>&copy; 2025 Ace Ultra Premium. All rights reserved.</p>
+  </footer>
 
+  <!-- Redirect fallback for first-visit hits (reads redirects.json) -->
   <script>
     (function(){
       function wildcardToRegex(p){
         return new RegExp('^' + p.replace(/[.+?^${}()|[\\]\\\\]/g,'\\$&').replace(/\*/g,'.*') + '$');
       }
+      // Try project prefix if your layout adds it; else default to "/"
       var prefix = document.documentElement.getAttribute('data-prefix') || '/';
       fetch(prefix + 'redirects.json', {cache:'no-store'})
         .then(function(r){ return r.ok ? r.json() : []; })
@@ -167,6 +131,3 @@
   </script>
 </body>
 </html>
-
-
-
