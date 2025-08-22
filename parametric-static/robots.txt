@@ -1,4 +1,4 @@
 ﻿User-agent: *
 Disallow:
 
-Sitemap: https:///maestro-uchiha.github.io/ace-ultra-premium-site/sitemap.xml
+Sitemap: https:/maestro-uchiha.github.io/ace-ultra-premium-site/sitemap.xml
