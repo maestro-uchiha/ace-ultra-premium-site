@@ -1,12 +1,11 @@
 # ============================================
 #  Amaterasu Static Deploy (ASD) - bake.ps1
-#  Layout-based (no partials), idempotent.
-#  - Wraps each HTML with layout.html (single <main>)
-#  - Computes {{PREFIX}} per page for nested dirs
-#  - Rebuilds /blog/ index list
-#  - Normalizes dash-like chars to "|"
-#  - Rewrites root-absolute links to prefix-relative (GP + custom domains)
-#  - Regenerates robots.txt and sitemap.xml from config.site.url + real files
+#  Works on GitHub Pages (project subpath) and custom domains
+#  - Wraps HTML with layout.html and {{PREFIX}}
+#  - Rewrites root-absolute links → prefix-relative
+#  - Normalizes en/em dashes (and mojibake) to "|"
+#  - Rebuilds /blog/ index (now prefers <title>, falls back to first <h1>)
+#  - Regenerates robots.txt and sitemap.xml from config.site.url + actual files
 # ============================================
 
 param(
@@ -28,24 +27,21 @@ if (-not (Test-Path $LayoutPath)) {
 }
 $Layout = Get-Content $LayoutPath -Raw
 
-# --- Normalize dashes (Unicode & entities & common mojibake) to pipe "|"
+# --- Normalize dashes (UTF-8 and common mojibake) to pipe
 function Normalize-DashesToPipe {
   param([string]$s)
   if ($null -eq $s) { return $s }
   $pipe = '|'
-  # Unicode en/em dash
-  $s = $s.Replace([string][char]0x2013, $pipe)  # – 
-  $s = $s.Replace([string][char]0x2014, $pipe)  # —
-  # HTML entities
+  $s = $s.Replace([string][char]0x2013, $pipe) # –
+  $s = $s.Replace([string][char]0x2014, $pipe) # —
   $s = $s.Replace('&ndash;', $pipe).Replace('&mdash;', $pipe)
-  # Common UTF-8 mojibake sequences
-  $seq_en  = [string]([char]0x00E2)+[char]0x0080+[char]0x0093
-  $seq_em  = [string]([char]0x00E2)+[char]0x0080+[char]0x0094
+  $seq_en = [string]([char]0x00E2)+[char]0x0080+[char]0x0093
+  $seq_em = [string]([char]0x00E2)+[char]0x0080+[char]0x0094
   $s = $s.Replace($seq_en, $pipe).Replace($seq_em, $pipe)
   return $s
 }
 
-# --- Convert root-absolute links to prefix-relative
+# --- Convert root-absolute links (href/src/action="/...") to prefix-relative
 function Rewrite-RootLinks {
   param([string]$html, [string]$prefix)
   if ([string]::IsNullOrEmpty($html)) { return $html }
@@ -58,7 +54,7 @@ function Rewrite-RootLinks {
   return $html
 }
 
-# --- Build absolute base URL from config.site.url
+# --- Get canonical base URL from config.site.url (absolute, with trailing /)
 function Get-BaseUrl {
   param([string]$CfgPath)
   $base = ""
@@ -66,21 +62,21 @@ function Get-BaseUrl {
     try {
       $cfg = Get-Content $CfgPath -Raw | ConvertFrom-Json -ErrorAction Stop
       if ($cfg.site -and $cfg.site.url) { $base = [string]$cfg.site.url }
-    } catch { }
+    } catch {}
   }
   if ([string]::IsNullOrWhiteSpace($base)) {
-    Write-Warning "[ASD] config.site.url is empty; sitemap/robots will use '/' which is not ideal for SEO."
+    Write-Warning "[ASD] config.site.url is empty; set it to your live origin (e.g., https://user.github.io/repo/)"
     $base = "/"
   }
-  # Normalize trailing slash to exactly one
-  $base = $base.Trim() + "/"
-  $base = $base -replace "://", "§§"    # protect scheme
-  $base = ($base -replace "/{2,}", "/") # collapse doubles
+  $base = $base.Trim()
+  # Ensure exactly one trailing slash; collapse doubles in the path
+  $base = $base -replace "://", "§§"
+  $base = ($base.TrimEnd('/') + "/") -replace "/{2,}", "/"
   $base = $base -replace "§§", "://"
   return $base
 }
 
-# Optional: load bake-config.json if args not provided
+# --- Optional CLI fallback from bake-config.json
 $BakeCfg = Join-Path $RootDir "bake-config.json"
 if ((-not $PSBoundParameters.ContainsKey('Brand') -or -not $PSBoundParameters.ContainsKey('Money')) -and (Test-Path $BakeCfg)) {
   try {
@@ -90,7 +86,7 @@ if ((-not $PSBoundParameters.ContainsKey('Brand') -or -not $PSBoundParameters.Co
   } catch { Write-Host "[ASD] Warning: bake-config.json invalid; ignoring." }
 }
 
-# ---- Build blog index (inject into content file BEFORE wrapping)
+# ---- Build blog index list BEFORE wrapping (title: <title> or fallback to first <h1>)
 $BlogIndex = Join-Path $BlogDir "index.html"
 if (Test-Path $BlogIndex) {
   $posts = New-Object System.Collections.Generic.List[string]
@@ -99,14 +95,23 @@ if (Test-Path $BlogIndex) {
     Sort-Object LastWriteTime -Descending |
     ForEach-Object {
       $html  = Get-Content $_.FullName -Raw
-      $m     = [regex]::Match($html, '<title>(.*?)</title>', 'IgnoreCase')
-      $title = if ($m.Success) { $m.Groups[1].Value } else { $_.BaseName }
+
+      # Prefer <title>, else first <h1>, else filename
+      $mTitle = [regex]::Match($html, '<title>(.*?)</title>', 'IgnoreCase')
+      if ($mTitle.Success) {
+        $title = $mTitle.Groups[1].Value
+      } else {
+        $mH1 = [regex]::Match($html, '(?is)<h1[^>]*>(.*?)</h1>')
+        $title = if ($mH1.Success) { $mH1.Groups[1].Value } else { $_.BaseName }
+      }
+
       $title = Normalize-DashesToPipe $title
       $date  = $_.LastWriteTime.ToString('yyyy-MM-dd')
-      $rel   = $_.Name  # relative to /blog/
+      $rel   = $_.Name
       $li    = ('<li><a href="./{0}">{1}</a><small> | {2}</small></li>' -f $rel, $title, $date)
       $posts.Add($li)
     }
+
   $bi = Get-Content $BlogIndex -Raw
   $joined = [string]::Join([Environment]::NewLine, $posts)
   $pattern = '(?s)<!-- POSTS_START -->.*?<!-- POSTS_END -->'
@@ -163,31 +168,27 @@ if ($c.author.PSObject.Properties.Name -contains 'name' -and $c.author.name) {
   } else { $c.author.name = ("{0} Team" -f $Brand) }
 }
 
-# Legacy keys for older assets
+# Legacy keys for back-compat
 if (-not ($c | Get-Member -Name brand     -MemberType NoteProperty)) { Add-Member -InputObject $c -NotePropertyName brand     -NotePropertyValue $Brand } else { $c.brand     = $Brand }
 if (-not ($c | Get-Member -Name moneySite -MemberType NoteProperty)) { Add-Member -InputObject $c -NotePropertyName moneySite -NotePropertyValue $Money } else { $c.moneySite = $Money }
 
 $c | ConvertTo-Json -Depth 12 | Set-Content -Encoding UTF8 $CfgPath
 Write-Host "[ASD] config.json updated"
 
-# ---- Extract original page content
+# ---- Extract original page content (markers > body > strip chrome; single <main> in layout)
 function Extract-Content {
   param([string]$raw)
-  # Markers first
   $mark = [regex]::Match($raw, '(?is)<!--\s*ASD:CONTENT_START\s*-->(.*?)<!--\s*ASD:CONTENT_END\s*-->')
   if ($mark.Success) {
     $raw = $mark.Groups[1].Value
   } else {
-    # or <body> inner
     $body = [regex]::Match($raw, '(?is)<body[^>]*>(.*?)</body>')
     if ($body.Success) { $raw = $body.Groups[1].Value }
   }
-  # strip old includes/chrome
   $raw = [regex]::Replace($raw, '(?is)<!--#include\s+virtual="partials/.*?-->', '')
   $raw = [regex]::Replace($raw, '(?is)<header\b[^>]*>.*?</header>', '')
   $raw = [regex]::Replace($raw, '(?is)<nav\b[^>]*>.*?</nav>', '')
   $raw = [regex]::Replace($raw, '(?is)<footer\b[^>]*>.*?</footer>', '')
-  # unwrap <main>
   $m = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
   if ($m.Success) { $raw = $m.Groups[1].Value }
   $raw = [regex]::Replace($raw, '(?is)</?main\b[^>]*>', '')
@@ -200,12 +201,15 @@ Get-ChildItem -Path $RootDir -Recurse -File |
   ForEach-Object {
     $raw = Get-Content $_.FullName -Raw
     $content = Extract-Content $raw
-    # Title from first <h1>, fallback to filename
+
+    # Title: prefer first <h1> in content, fallback to filename
     $tm = [regex]::Match($content, '(?is)<h1[^>]*>(.*?)</h1>')
     $pageTitle = if ($tm.Success) { $tm.Groups[1].Value } else { $_.BaseName }
+
     # Compute prefix depth
     $prefix = Get-RelPrefix -FilePath $_.FullName
-    # Build final page
+
+    # Build final page with markers embedded
     $final = $Layout
     $final = $final.Replace('{{CONTENT}}', $content)
     $final = $final.Replace('{{TITLE}}', $pageTitle)
@@ -214,22 +218,23 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $final = $final.Replace('{{MONEY}}', $Money)
     $final = $final.Replace('{{YEAR}}', "$Year")
     $final = $final.Replace('{{PREFIX}}', $prefix)
-    # Routing: rewrite root-absolute to prefix-relative
+
+    # Fix absolute-root links and normalize dashes last
     $final = Rewrite-RootLinks $final $prefix
-    # Sanitize weird dashes last
     $final = Normalize-DashesToPipe $final
+
     Set-Content -Encoding UTF8 $_.FullName $final
     Write-Host ("[ASD] Wrapped {0} (prefix='{1}')" -f $_.FullName.Substring($RootDir.Length+1), $prefix)
   }
 
-# ---- Generate robots.txt and sitemap.xml from actual files
+# ---- Generate robots.txt and sitemap.xml from actual files + base URL
 function Build-Sitemap-And-Robots {
   param([string]$BaseUrl)
 
-  $today = (Get-Date).ToString('yyyy-MM-dd')
-  $urls  = New-Object System.Collections.Generic.List[object]
+  Write-Host "[ASD] Using base URL for sitemap/robots: $BaseUrl"
 
-  # Collect html pages (exclude layout, assets, partials, 404)
+  $urls = New-Object System.Collections.Generic.List[object]
+
   Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
     Where-Object {
       $_.FullName -ne $LayoutPath -and
@@ -239,21 +244,23 @@ function Build-Sitemap-And-Robots {
     } |
     ForEach-Object {
       $rel = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'
-      # index handling
+      # Convert "index" files to directory URLs
       if ($rel -ieq 'index.html') {
         $loc = $BaseUrl
       } elseif ($rel -match '^(.+)/index\.html$') {
-        $loc = ($BaseUrl.TrimEnd('/') + '/' + $matches[1] + '/').Replace('//','/')
-        $loc = $loc -replace ':/','://'
+        $loc = ($BaseUrl.TrimEnd('/') + '/' + $matches[1] + '/')
       } else {
-        $loc = $BaseUrl.TrimEnd('/') + '/' + $rel
-        $loc = $loc -replace ':/','://'
+        $loc = ($BaseUrl.TrimEnd('/') + '/' + $rel)
       }
+      # Normalize accidental doubles after concat (keep scheme)
+      $loc = $loc -replace ':/','://' -replace '/{2,}','/'
+      $loc = $loc -replace '://','§§' -replace '/{2,}','/' -replace '§§','://'
+
       $last = $_.LastWriteTime.ToString('yyyy-MM-dd')
       $urls.Add([pscustomobject]@{ loc=$loc; lastmod=$last })
     }
 
-  # Write sitemap.xml
+  # sitemap.xml
   $sitemapPath = Join-Path $RootDir 'sitemap.xml'
   $xml = New-Object System.Text.StringBuilder
   [void]$xml.AppendLine('<?xml version="1.0" encoding="UTF-8"?>')
@@ -265,9 +272,11 @@ function Build-Sitemap-And-Robots {
   Set-Content -Encoding UTF8 $sitemapPath $xml.ToString()
   Write-Host "[ASD] sitemap.xml generated ($($urls.Count) urls)"
 
-  # Write robots.txt with absolute sitemap URL
+  # robots.txt
   $robotsPath = Join-Path $RootDir 'robots.txt'
-  $smap = ($BaseUrl.TrimEnd('/') + '/sitemap.xml') -replace ':/','://'
+  $smap = ($BaseUrl.TrimEnd('/') + '/sitemap.xml')
+  $smap = $smap -replace ':/','://' -replace '/{2,}','/'
+  $smap = $smap -replace '://','§§' -replace '/{2,}','/' -replace '§§','://'
   $robots = @"
 User-agent: *
 Disallow:
