@@ -119,11 +119,11 @@ nav a:hover, nav a:focus-visible { text-decoration: underline; outline: none; }
 }
 #site-nav.open { max-height: 60vh; }
 
-/* Desktop/tablet: keep nav expanded; keep button visible too */
+/* Desktop/tablet: keep nav expanded; HIDE the button on >= 721px */
 @media (min-width: 721px){
   #site-nav { max-height: none; }  /* expanded on desktop */
   nav { width: auto; }
-  .nav-toggle { margin-left: auto; } /* shove button right */
+  .nav-toggle { display: none; }   /* hide the hamburger on desktop */
 }
 
 /* Footer */
@@ -195,17 +195,4 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 /* Reduce motion */
 @media (prefers-reduced-motion: reduce){
   * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
-}
-
-/* Safety override: always show the hamburger button on every page */
-header .nav-toggle {
-  display: flex !important;
-  visibility: visible !important;
-  opacity: 1 !important;
-  z-index: 1001;
-}
-header .nav-toggle .bar {
-  display: block !important;
-  height: 2px !important;
-  background: #fff !important;
 }
