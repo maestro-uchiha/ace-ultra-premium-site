@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
     <title>{{BRAND}} Blog</title>
@@ -11,6 +11,13 @@
       <guid>https://YOUR-DOMAIN.example/blog/first-post.html</guid>
       <pubDate>Tue, 19 Aug 2025 10:00:00 GMT</pubDate>
       <description>A brief introduction to the brand and quality standards.</description>
+    </item>
+    <item>
+      <title>First Impressions of Ace Ultra Premium</title>
+      <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/first-impressions-of-ace-ultra-premium.html</link>
+      <guid>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/first-impressions-of-ace-ultra-premium.html</guid>
+      <pubDate>Fri, 22 Aug 2025 18:51:57 GMT</pubDate>
+      <description>Hands-on notes and quick verdict.</description>
     </item>
   </channel>
 </rss>
