@@ -19,6 +19,8 @@
 
   <link rel="icon" href="assets/favicon.ico">
   <link rel="stylesheet" href="assets/css/style.css">
+
+  <link rel="alternate" type="application/rss+xml" title="Ace Ultra Premium Blog" href="feed.xml">
 </head>
 <body>
   <header>
@@ -45,6 +47,8 @@
   </header>
 
   <main>
+    
+    
     
     
     
@@ -115,6 +119,8 @@
   
   
   
+  
+  
   </main>
 
 <footer>
@@ -131,28 +137,36 @@
 </footer>
 
   <script>
-    (function () {
-      var btn = document.getElementById('navToggle');
-      var nav = document.getElementById('site-nav');
-      if (!btn || !nav) return;
-
-      function set(open) {
-        btn.setAttribute('aria-expanded', open);
-        nav.classList.toggle('open', open);
-        btn.classList.toggle('is-active', open);
+    (function(){
+      function wildcardToRegex(p){
+        return new RegExp('^' + p.replace(/[.+?^${}()|[\\]\\\\]/g,'\\$&').replace(/\*/g,'.*') + '$');
       }
-      btn.addEventListener('click', function () {
-        set(btn.getAttribute('aria-expanded') !== 'true');
-      });
-      document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') set(false);
-      });
-      nav.addEventListener('click', function (e) {
-        if (e.target && e.target.tagName === 'A') set(false);
-      });
+      var prefix = document.documentElement.getAttribute('data-prefix') || '/';
+      fetch(prefix + 'redirects.json', {cache:'no-store'})
+        .then(function(r){ return r.ok ? r.json() : []; })
+        .then(function(list){
+          var path = location.pathname;
+          if (prefix !== '/' && path.indexOf(prefix) === 0) {
+            path = path.substring(prefix.length - 1); // keep leading '/'
+          }
+          for (var i=0;i<list.length;i++){
+            var item = list[i]; if (!item || item.disabled === true) continue;
+            var from = String(item.from||''); var to = String(item.to||'');
+            if (!from || !to) continue;
+            if (wildcardToRegex(from).test(path)) {
+              var target = new URL(to, location.origin + prefix);
+              target.search = location.search;
+              target.hash = location.hash;
+              location.replace(target.href);
+              return;
+            }
+          }
+        })
+        .catch(function(){});
     })();
   </script>
 </body>
 </html>
+
 
 
