@@ -18,37 +18,48 @@
   <meta name="twitter:card" content="summary_large_image">
 
   <link rel="icon" href="assets/favicon.ico">
-
-  <!-- CSS: give it an ID so we can rewrite the href when 404 is served from a deep path -->
+  <!-- Give CSS an id so we can rewrite it -->
   <link id="asdcss" rel="stylesheet" href="assets/css/style.css">
 
-  <!-- Auto-fix CSS path for GitHub Pages deep 404s -->
+  <!-- Auto-detect correct project root for deep 404s; set <base> + fix CSS -->
   <script>
     (function(){
-      var link = document.getElementById('asdcss');
-      if (!link) return;
+      var head = document.getElementsByTagName('head')[0];
+      var css  = document.getElementById('asdcss');
 
       function probe(url, cb){
         fetch(url, {method:'HEAD', cache:'no-store'}).then(function(r){ cb(r.ok); })
           .catch(function(){ cb(false); });
       }
 
-      var segs = location.pathname.split('/').filter(Boolean);
+      // Build candidate roots from current path: /user/repo/a/b/ -> try /user/repo/a/b/, /user/repo/a/, /user/repo/, /
+      var segs  = location.pathname.split('/').filter(Boolean);
       var roots = [];
-      // Build candidates: /user/repo/foo/bar/ -> /user/repo/foo/bar/ .. /user/repo/ .. /
       for (var i=0; i<=segs.length; i++){
-        var base = '/' + segs.slice(0,i).join('/') + '/';
-        roots.push(base);
+        roots.push('/' + segs.slice(0,i).join('/') + '/');
       }
       roots.reverse();
 
       (function tryNext(){
-        if (!roots.length) return; // leave as-is if nothing matches
+        if (!roots.length) return; // leave links as-is if nothing matches
         var base = roots.shift();
-        var candidate = base + 'assets/css/style.css';
-        probe(candidate, function(ok){
-          if (ok) { link.href = candidate; }
-          else { tryNext(); }
+        var candidateCss = base + 'assets/css/style.css';
+        probe(candidateCss, function(ok){
+          if (ok) {
+            // 1) set <base> so all relative links (blog/, index.html, etc.) resolve from the project root
+            var existingBase = document.querySelector('base');
+            if (!existingBase) {
+              var b = document.createElement('base');
+              b.setAttribute('href', base);
+              head.insertBefore(b, head.firstChild);
+            } else {
+              existingBase.setAttribute('href', base);
+            }
+            // 2) fix CSS href to absolute-within-project
+            if (css) css.href = candidateCss;
+          } else {
+            tryNext();
+          }
         });
       })();
     })();
@@ -60,13 +71,10 @@
   <header>
     <h1><a href="index.html">Ace Ultra Premium</a></h1>
 
-    <!-- Mobile toggle (CSS bars, ASCII-safe) -->
-    <button id="navToggle" class="nav-toggle"
-            aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
+    <button id="navToggle" class="nav-toggle" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
       <span class="bar"></span><span class="bar"></span><span class="bar"></span>
     </button>
 
-    <!-- Collapsible nav -->
     <nav id="site-nav">
       <ul>
         <li><a href="index.html">Home</a></li>
@@ -98,13 +106,12 @@
     <p>&copy; 2025 Ace Ultra Premium. All rights reserved.</p>
   </footer>
 
-  <!-- Redirect fallback for first-visit hits (reads redirects.json) -->
+  <!-- Redirect fallback (reads redirects.json) -->
   <script>
     (function(){
       function wildcardToRegex(p){
         return new RegExp('^' + p.replace(/[.+?^${}()|[\\]\\\\]/g,'\\$&').replace(/\*/g,'.*') + '$');
       }
-      // Try project prefix if your layout adds it; else default to "/"
       var prefix = document.documentElement.getAttribute('data-prefix') || '/';
       fetch(prefix + 'redirects.json', {cache:'no-store'})
         .then(function(r){ return r.ok ? r.json() : []; })
@@ -120,7 +127,7 @@
             if (wildcardToRegex(from).test(path)) {
               var target = new URL(to, location.origin + prefix);
               target.search = location.search;
-              target.hash = location.hash;
+              target.hash   = location.hash;
               location.replace(target.href);
               return;
             }
