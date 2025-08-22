@@ -19,5 +19,12 @@
       <pubDate>Fri, 22 Aug 2025 18:51:57 GMT</pubDate>
       <description>Hands-on notes and quick verdict.</description>
     </item>
+    <item>
+      <title>Test Title</title>
+      <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/test-title.html</link>
+      <guid>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/test-title.html</guid>
+      <pubDate>Fri, 22 Aug 2025 19:24:01 GMT</pubDate>
+      <description>Short description for this article.</description>
+    </item>
   </channel>
 </rss>

@@ -7,10 +7,12 @@ param(
 $Root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Set-Location $Root
 
+# Read config (for domain + hint)
+$cfg = $null
+if (Test-Path ".\config.json") { try { $cfg = Get-Content .\config.json -Raw | ConvertFrom-Json } catch {} }
+
 function Get-Domain {
-  if (Test-Path ".\config.json") {
-    try { $cfg = Get-Content .\config.json -Raw | ConvertFrom-Json; if ($cfg.site.url) { return ($cfg.site.url.TrimEnd('/') + '/') } } catch {}
-  }
+  if ($cfg -and $cfg.site -and $cfg.site.url) { return ($cfg.site.url.TrimEnd('/') + '/') }
   return "https://YOUR-DOMAIN.example/"
 }
 
@@ -51,23 +53,29 @@ $dst = Join-Path $Root ("blog\" + $NewSlug + ".html")
 if (-not (Test-Path $src)) { Write-Error "Post not found: $src"; exit 1 }
 if (Test-Path $dst) { Write-Error "Target already exists: $dst"; exit 1 }
 
-# Load old content
 $raw = Get-Content $src -Raw
-$mx = [regex]::Match($raw, '(?is)<!--\s*ASD:CONTENT_START\s*-->(.*?)<!--\s*ASD:CONTENT_END\s*-->')
-if (-not $mx.Success) { Write-Error "ASD content markers not found in $src"; exit 1 }
-$content = $mx.Groups[1].Value
 
-# Existing title/date/desc
+# Try markers; fall back to inner <main>
+$mx = [regex]::Match($raw, '(?is)<!--\s*ASD:CONTENT_START\s*-->(.*?)<!--\s*ASD:CONTENT_END\s*-->')
+$hadMarkers = $mx.Success
+if ($mx.Success) {
+  $content = $mx.Groups[1].Value
+} else {
+  $m = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
+  if (-not $m.Success) { Write-Error "ASD content markers not found and no <main> section in $src"; exit 1 }
+  $content = $m.Groups[1].Value
+}
+
+# Existing title/date
 $mH1 = [regex]::Match($content, '(?is)<h1[^>]*>(.*?)</h1>')
 $curTitle = if ($mH1.Success) { $mH1.Groups[1].Value } else { $OldSlug }
 if ($Title) { $curTitle = $Title }
 
 $mMeta = [regex]::Match($content, '(?is)<p\s+class="meta">\s*([^<&]+)\s*&')
 $curDate = if ($mMeta.Success) { $mMeta.Groups[1].Value.Trim() } else { (Get-Date -Format 'yyyy-MM-dd') }
-
 $curDesc = "Updated: $curTitle"
 
-# Update H1 if provided
+# If Title provided, update H1
 if ($Title) {
   $h1rx = New-Object System.Text.RegularExpressions.Regex('<h1[^>]*>.*?</h1>', 'Singleline,IgnoreCase')
   if ($h1rx.IsMatch($content)) { $content = $h1rx.Replace($content, "<h1>$Title</h1>", 1) }
@@ -78,8 +86,16 @@ if ($Title) {
 $content = [regex]::Replace($content, '(?is)<script[^>]*type="application/ld\+json"[^>]*>.*?</script>', '')
 $content = $content.Trim() + "`n" + (Build-JsonLd -dom $dom -slug $NewSlug -ttl $curTitle -dt $curDate -desc $curDesc)
 
-# Write to new file
-$newRaw = $raw.Substring(0, $mx.Groups[1].Index) + $content + $raw.Substring($mx.Groups[1].Index + $mx.Groups[1].Length)
+# Write to NEW file and remove old
+if ($hadMarkers) {
+  # Replace within markers then save as new file
+  $newRaw = $raw.Substring(0, $mx.Groups[1].Index) + $content + $raw.Substring($mx.Groups[1].Index + $mx.Groups[1].Length)
+} else {
+  # Insert markers into the inner <main> so the renamed file has them going forward
+  $m = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
+  $withMarkers = "<!-- ASD:CONTENT_START -->`r`n$content`r`n<!-- ASD:CONTENT_END -->"
+  $newRaw = $raw.Substring(0, $m.Groups[1].Index) + $withMarkers + $raw.Substring($m.Groups[1].Index + $m.Groups[1].Length)
+}
 Set-Content -Encoding UTF8 $dst $newRaw
 Remove-Item $src -Force
 Write-Host "[ASD] Renamed blog/$OldSlug.html -> blog/$NewSlug.html"
@@ -102,6 +118,8 @@ if (Test-Path $feedPath) {
     $rss.Save($feedPath)
     Write-Host "[ASD] feed.xml updated"
   } catch { Write-Warning "[ASD] Could not update feed.xml: $_" }
+} else {
+  Write-Warning "[ASD] feed.xml not found; skipping"
 }
 
 # --- Friendly manual-next-step hint (does not execute bake)
