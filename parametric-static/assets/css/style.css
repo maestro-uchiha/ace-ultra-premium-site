@@ -232,3 +232,22 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 @media (prefers-reduced-motion: reduce){
   * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
 }
+
+/* Blog list + pager */
+.posts { list-style: none; padding: 0; margin: 1rem 0; }
+.posts li { padding: .6rem 0; border-bottom: 1px dashed #223; }
+.posts li a { font-weight: 600; }
+.posts small { margin-left: .5rem; opacity: .8; }
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+.pager-pages { display: flex; gap: .5rem; }
+.pager-pages a { text-decoration: none; font-weight: 600; }
+.pager-pages strong { padding: .1rem .4rem; border: 1px solid #444; border-radius: .25rem; }
+.pager-prev, .pager-next { font-weight: 700; text-decoration: none; }
