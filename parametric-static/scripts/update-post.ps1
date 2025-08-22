@@ -10,13 +10,12 @@ param(
 $Root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Set-Location $Root
 
+# --- Read config (for domain/money + hint later)
+$cfg = $null
+if (Test-Path ".\config.json") { try { $cfg = Get-Content .\config.json -Raw | ConvertFrom-Json } catch {} }
+
 function Get-Domain {
-  if (Test-Path ".\config.json") {
-    try {
-      $cfg = Get-Content .\config.json -Raw | ConvertFrom-Json
-      if ($cfg.site.url) { return ($cfg.site.url.TrimEnd('/') + '/') }
-    } catch {}
-  }
+  if ($cfg -and $cfg.site -and $cfg.site.url) { return ($cfg.site.url.TrimEnd('/') + '/') }
   return "https://YOUR-DOMAIN.example/"
 }
 
@@ -70,18 +69,24 @@ function Build-JsonLd([string]$dom, [string]$slug, [string]$ttl, [string]$dt, [s
 "@
 }
 
+$dom = Get-Domain
 $postPath = Join-Path $Root ("blog\" + $Slug + ".html")
 if (-not (Test-Path $postPath)) { Write-Error "Post not found: $postPath"; exit 1 }
 
 $raw = Get-Content $postPath -Raw
-$dom = Get-Domain
 
-# Extract editable content block
+# --- Try markers first; fall back to inner <main> if markers are missing
 $mx = [regex]::Match($raw, '(?is)<!--\s*ASD:CONTENT_START\s*-->(.*?)<!--\s*ASD:CONTENT_END\s*-->')
-if (-not $mx.Success) { Write-Error "ASD content markers not found in $postPath"; exit 1 }
-$content = $mx.Groups[1].Value
+$hadMarkers = $mx.Success
+if ($mx.Success) {
+  $content = $mx.Groups[1].Value
+} else {
+  $m = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
+  if (-not $m.Success) { Write-Error "ASD content markers not found and no <main> section in $postPath"; exit 1 }
+  $content = $m.Groups[1].Value
+}
 
-# Current values
+# --- Current values/defaults
 if (-not $Title) {
   $mH1 = [regex]::Match($content, '(?is)<h1[^>]*>(.*?)</h1>')
   $Title = if ($mH1.Success) { $mH1.Groups[1].Value } else { $Slug }
@@ -92,7 +97,7 @@ if (-not $Date) {
 }
 if (-not $Description) { $Description = "Updated: $Title" }
 
-# Optional new body
+# --- Optional new body
 $bodyHtml = Read-BodyHtml $BodyPath
 
 # 1) Update <h1>
@@ -100,10 +105,10 @@ $h1rx = New-Object System.Text.RegularExpressions.Regex('<h1[^>]*>.*?</h1>', 'Si
 if ($h1rx.IsMatch($content)) { $content = $h1rx.Replace($content, "<h1>$Title</h1>", 1) }
 else { $content = "<h1>$Title</h1>`n" + $content }
 
-# 2) Update meta date
+# 2) Update meta date line
 $content = [regex]::Replace($content, '(?is)<p\s+class="meta">.*?</p>', "<p class=""meta"">$Date &middot; <a href=""{{MONEY}}"">{{MONEY}}</a></p>", 1)
 
-# 3) Update article body (if provided)
+# 3) Update article body if provided
 if ($bodyHtml) {
   $articleRx = New-Object System.Text.RegularExpressions.Regex('<article[^>]*class="prose"[^>]*>.*?</article>', 'Singleline,IgnoreCase')
   if ($articleRx.IsMatch($content)) {
@@ -117,17 +122,23 @@ if ($bodyHtml) {
 $content = [regex]::Replace($content, '(?is)<script[^>]*type="application/ld\+json"[^>]*>.*?</script>', '')
 $content = $content.Trim() + "`n" + (Build-JsonLd -dom $dom -slug $Slug -ttl $Title -dt $Date -desc $Description)
 
-# Write back within markers
-$new = $raw.Substring(0, $mx.Groups[1].Index) + $content + $raw.Substring($mx.Groups[1].Index + $mx.Groups[1].Length)
+# --- Write back — if markers were missing, insert them now so future edits work
+if ($hadMarkers) {
+  $new = $raw.Substring(0, $mx.Groups[1].Index) + $content + $raw.Substring($mx.Groups[1].Index + $mx.Groups[1].Length)
+} else {
+  $m = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
+  $withMarkers = "<!-- ASD:CONTENT_START -->`r`n$content`r`n<!-- ASD:CONTENT_END -->"
+  $new = $raw.Substring(0, $m.Groups[1].Index) + $withMarkers + $raw.Substring($m.Groups[1].Index + $m.Groups[1].Length)
+}
 Set-Content -Encoding UTF8 $postPath $new
-Write-Host "[ASD] Updated blog/$Slug.html"
+Write-Host "[ASD] Updated blog/$Slug.html (markers ensured)"
 
-# Touch file timestamp (optional, affects blog index order)
+# --- Touch timestamp (affects blog index order) if requested
 if ($TouchFileTime -and $Date) {
   try { $(Get-Item $postPath).LastWriteTime = [datetime]::Parse($Date) } catch {}
 }
 
-# Update feed.xml item
+# --- Update feed.xml entry (create if missing)
 $feedPath = Join-Path $Root "feed.xml"
 if (Test-Path $feedPath) {
   try {
@@ -146,8 +157,8 @@ if (Test-Path $feedPath) {
     if (-not $found) {
       $item = $rss.CreateElement("item")
       $t = $rss.CreateElement("title"); $t.InnerText = $Title; $null = $item.AppendChild($t)
-      $l = $rss.CreateElement("link");  $l.InnerText = $postUrl; $null = $item.AppendChild($l)
-      $g = $rss.CreateElement("guid");  $g.InnerText = $postUrl; $null = $item.AppendChild($g)
+      $l = $rss.CreateElement("link");  $l.InnerText = "$postUrl"; $null = $item.AppendChild($l)
+      $g = $rss.CreateElement("guid");  $g.InnerText = "$postUrl"; $null = $item.AppendChild($g)
       $d = $rss.CreateElement("pubDate"); $d.InnerText = [DateTime]::UtcNow.ToString("R"); $null = $item.AppendChild($d)
       $desc = $rss.CreateElement("description"); $desc.InnerText = $Description; $null = $item.AppendChild($desc)
       $null = $chan.AppendChild($item)
@@ -155,6 +166,8 @@ if (Test-Path $feedPath) {
     $rss.Save($feedPath)
     Write-Host "[ASD] feed.xml updated"
   } catch { Write-Warning "[ASD] Could not update feed.xml: $_" }
+} else {
+  Write-Warning "[ASD] feed.xml not found; skipping"
 }
 
 # --- Friendly manual-next-step hint (does not execute bake)
@@ -167,6 +180,5 @@ try {
     if ($cfg.moneySite) { $moneyHint = $cfg.moneySite }
   }
 } catch {}
-
 Write-Host "`n[ASD] Next (manual):"
 Write-Host ("  .\parametric-static\scripts\bake.ps1 -Brand ""{0}"" -Money ""{1}""" -f $brandHint, $moneyHint)
