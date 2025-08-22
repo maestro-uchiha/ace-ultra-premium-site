@@ -64,32 +64,61 @@ header h1 {
 }
 header h1 a { color: #fff; text-decoration: none; }
 
-/* Hamburger button: pure CSS bars (ASCII-only, no symbols) */
+/* Hamburger button: compact, centered, no overflow */
+:root{
+  --nav-btn-w: 40px;    /* button width  */
+  --nav-btn-h: 34px;    /* button height */
+  --nav-pad:   6px;     /* inner padding */
+  --nav-bar-h: 2px;     /* line thickness */
+  --nav-gap:   6px;     /* gap between lines */
+  --nav-tilt:  5px;     /* translate amount when forming X */
+}
+
 .nav-toggle {
   appearance: none;
   border: 1px solid #444;
   background: #111;
   color: #fff;
   border-radius: .5rem;
-  width: 44px;
-  height: 36px;
-  padding: 6px 8px;
+  width: var(--nav-btn-w);
+  height: var(--nav-btn-h);
+  padding: var(--nav-pad);
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
   align-items: stretch;
+  gap: var(--nav-gap);
   cursor: pointer;
+  overflow: hidden;                 /* clip any sub-pixel overflow */
+  box-sizing: border-box;
+  z-index: 1001;                    /* above nav list */
 }
+
 .nav-toggle .bar {
-  display: block;
-  height: 2px;
+  height: var(--nav-bar-h);
   background: #fff;
   border-radius: 1px;
+  transform-origin: 50% 50%;       /* rotate around the center */
+  transition: transform .2s ease, opacity .2s ease, background-color .2s ease;
 }
-.nav-toggle.is-active .bar:nth-child(1) { transform: translateY(7px) rotate(45deg); }
-.nav-toggle.is-active .bar:nth-child(2) { opacity: 0; }
-.nav-toggle.is-active .bar:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
-.nav-toggle .bar { transition: transform .2s ease, opacity .2s ease; }
+
+/* X state */
+.nav-toggle.is-active .bar:nth-child(1) {
+  transform: translateY(var(--nav-tilt)) rotate(45deg);
+}
+.nav-toggle.is-active .bar:nth-child(2) {
+  opacity: 0;
+}
+.nav-toggle.is-active .bar:nth-child(3) {
+  transform: translateY(calc(-1 * var(--nav-tilt))) rotate(-45deg);
+}
+
+/* (Keep) Desktop: hide hamburger */
+@media (min-width: 721px){
+  #site-nav { max-height: none; }
+  nav { width: auto; }
+  .nav-toggle { display: none; }
+}
 
 /* Nav */
 nav { width: 100%; }
