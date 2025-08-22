@@ -6,7 +6,8 @@
 #  - Computes {{PREFIX}} per page for nested paths
 #  - Rebuilds blog index (relative links in /blog/)
 #  - Updates config.json (nested schema) and writes UTF-8
-#  - Normalizes dash-like characters/entities/mojibake to "|"
+#  - Normalizes dash-like characters to "|"
+#  - Rewrites root-absolute links to prefix-relative (GP + custom domains)
 # ============================================
 
 param(
@@ -28,34 +29,39 @@ if (-not (Test-Path $LayoutPath)) {
 }
 $Layout = Get-Content $LayoutPath -Raw
 
-# --- Normalize dashes (Unicode, entities, and common mojibake) to a pipe "|"
+# --- Normalize dashes (Unicode & entities & common mojibake) to pipe "|"
 function Normalize-DashesToPipe {
   param([string]$s)
   if ($null -eq $s) { return $s }
   $pipe = '|'
-
-  # Proper Unicode dashes
-  $s = $s.Replace([string][char]0x2013, $pipe)  # en dash
-  $s = $s.Replace([string][char]0x2014, $pipe)  # em dash
-
-  # HTML entities that might appear in content
-  $s = $s.Replace('&ndash;', $pipe)
-  $s = $s.Replace('&mdash;', $pipe)
-
-  # Mojibake sequences (UTF-8 bytes read as Latin-1/CP1252), built from codepoints:
-  # en dash (E2 80 93) -> three chars: 0x00E2, 0x0080, 0x0093
+  # Unicode en/em dash
+  $s = $s.Replace([string][char]0x2013, $pipe)
+  $s = $s.Replace([string][char]0x2014, $pipe)
+  # HTML entities
+  $s = $s.Replace('&ndash;', $pipe).Replace('&mdash;', $pipe)
+  # Common mojibake sequences for en/em dashes
   $seq_en  = [string]([char]0x00E2) + [char]0x0080 + [char]0x0093
-  # em dash (E2 80 94) -> three chars: 0x00E2, 0x0080, 0x0094
   $seq_em  = [string]([char]0x00E2) + [char]0x0080 + [char]0x0094
   $s = $s.Replace($seq_en, $pipe).Replace($seq_em, $pipe)
-
-  # Double-mojibake variants sometimes appear after copy/paste chains:
-  # "Ã¢â‚¬â€œ" and "Ã¢â‚¬â€�"
   $seq2_en = [string]([char]0x00C3)+[char]0x0082+[char]0x00C2+[char]0x00A2+[char]0x00E2+[char]0x0080+[char]0x0093
   $seq2_em = [string]([char]0x00C3)+[char]0x0082+[char]0x00C2+[char]0x00A2+[char]0x00E2+[char]0x0080+[char]0x0094
   $s = $s.Replace($seq2_en, $pipe).Replace($seq2_em, $pipe)
-
   return $s
+}
+
+# --- Convert root-absolute links to prefix-relative
+function Rewrite-RootLinks {
+  param([string]$html, [string]$prefix)
+  if ([string]::IsNullOrEmpty($html)) { return $html }
+
+  $hrefEval = [System.Text.RegularExpressions.MatchEvaluator]{ param($m) 'href="'  + $prefix + $m.Groups[1].Value }
+  $srcEval  = [System.Text.RegularExpressions.MatchEvaluator]{  param($m) 'src="'   + $prefix + $m.Groups[1].Value }
+  $actEval  = [System.Text.RegularExpressions.MatchEvaluator]{  param($m) 'action="' + $prefix + $m.Groups[1].Value }
+
+  $html = [regex]::Replace($html, 'href="/(?!/)([^"#?]+)', $hrefEval)
+  $html = [regex]::Replace($html, 'src="/(?!/)([^"#?]+)',  $srcEval)
+  $html = [regex]::Replace($html, 'action="/(?!/)([^"#?]+)', $actEval)
+  return $html
 }
 
 # Optional: load bake-config.json if args not provided
@@ -124,7 +130,7 @@ if (-not ($c | Get-Member -Name author -MemberType NoteProperty)) { $c | Add-Mem
 
 $desc = if ($c.site.PSObject.Properties.Name -contains 'description' -and $c.site.description) {
   ($c.site.description -replace '\{\{BRAND\}\}', $Brand)
-} else { "Premium $Brand - quality, reliability, trust." }
+} else { "Premium $Brand | quality, reliability, trust." }
 
 $c.site.name = $Brand
 if (-not ($c.site.PSObject.Properties.Name -contains 'url')) {
@@ -142,40 +148,36 @@ if ($c.author.PSObject.Properties.Name -contains 'name' -and $c.author.name) {
   } else { $c.author.name = ("{0} Team" -f $Brand) }
 }
 
-# Legacy keys
+# Legacy keys for older assets
 if (-not ($c | Get-Member -Name brand     -MemberType NoteProperty)) { Add-Member -InputObject $c -NotePropertyName brand     -NotePropertyValue $Brand } else { $c.brand     = $Brand }
 if (-not ($c | Get-Member -Name moneySite -MemberType NoteProperty)) { Add-Member -InputObject $c -NotePropertyName moneySite -NotePropertyValue $Money } else { $c.moneySite = $Money }
 
 $c | ConvertTo-Json -Depth 12 | Set-Content -Encoding UTF8 $CfgPath
 Write-Host "[ASD] config.json updated"
 
-# ---- Extract original content safely (markers first, otherwise strip site chrome)
+# ---- Extract original content safely
 function Extract-Content {
   param([string]$raw)
 
-  # 1) Prefer ASD markers (idempotent re-bake)
+  # 1) Prefer ASD markers
   $mark = [regex]::Match($raw, '(?is)<!--\s*ASD:CONTENT_START\s*-->(.*?)<!--\s*ASD:CONTENT_END\s*-->')
   if ($mark.Success) {
     $raw = $mark.Groups[1].Value
   } else {
-    # 2) Else fallback to body inner HTML if it's a full HTML document
+    # 2) Else fallback to body inner HTML
     $body = [regex]::Match($raw, '(?is)<body[^>]*>(.*?)</body>')
     if ($body.Success) { $raw = $body.Groups[1].Value }
   }
 
-  # 3) Strip any old includes and site chrome
+  # 3) Strip old SSI/includes/chrome
   $raw = [regex]::Replace($raw, '(?is)<!--#include\s+virtual="partials/.*?-->', '')
   $raw = [regex]::Replace($raw, '(?is)<header\b[^>]*>.*?</header>', '')
   $raw = [regex]::Replace($raw, '(?is)<nav\b[^>]*>.*?</nav>', '')
   $raw = [regex]::Replace($raw, '(?is)<footer\b[^>]*>.*?</footer>', '')
 
-  # 4) UNWRAP <main> from source pages (keep inner HTML, remove tags)
-  #    - If a <main> exists, take the FIRST one's inner HTML
+  # 4) Unwrap <main> (keep inner HTML, ensure layout owns the single <main>)
   $m = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
-  if ($m.Success) {
-    $raw = $m.Groups[1].Value
-  }
-  #    - Remove any stray <main> tags that might remain
+  if ($m.Success) { $raw = $m.Groups[1].Value }
   $raw = [regex]::Replace($raw, '(?is)</?main\b[^>]*>', '')
 
   return $raw
@@ -195,7 +197,7 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     # Compute prefix depth
     $prefix = Get-RelPrefix -FilePath $_.FullName
 
-    # Build final page with markers embedded
+    # Build final page
     $final = $Layout
     $final = $final.Replace('{{CONTENT}}', $content)
     $final = $final.Replace('{{TITLE}}', $pageTitle)
@@ -205,7 +207,10 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $final = $final.Replace('{{YEAR}}', "$Year")
     $final = $final.Replace('{{PREFIX}}', $prefix)
 
-    # Normalize any dash-like text to a plain pipe
+    # Routing: rewrite root-absolute to prefix-relative
+    $final = Rewrite-RootLinks $final $prefix
+
+    # Sanitize weird dashes last
     $final = Normalize-DashesToPipe $final
 
     Set-Content -Encoding UTF8 $_.FullName $final

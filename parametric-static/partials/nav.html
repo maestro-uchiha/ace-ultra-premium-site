@@ -1,48 +1,51 @@
-﻿<!DOCTYPE html>
+﻿<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <title>nav | Ace Ultra Premium</title>
-  <meta name="description" content="Premium Ace Ultra Premium | quality, reliability, trust." />
+  <meta name="description" content="Premium Ace Ultra Premium | quality, reliability, trust.">
   <link rel="canonical" href="../index.html">
+
+  <!-- Open Graph -->
   <meta property="og:title" content="nav | Ace Ultra Premium">
   <meta property="og:description" content="Premium Ace Ultra Premium | quality, reliability, trust.">
   <meta property="og:image" content="../assets/img/og.jpg">
+  <meta property="og:type" content="website">
+
+  <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
+
   <link rel="icon" href="../assets/favicon.ico">
-  <link rel="stylesheet" href="../assets/css/style.css" />
+  <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 <body>
   <header>
-  <h1><a href="../index.html">Ace Ultra Premium</a></h1>
+    <h1><a href="../index.html">Ace Ultra Premium</a></h1>
 
-  <!-- Mobile toggle -->
-  <!-- Replace the old button in layout.html -->
-  <button id="navToggle" class="nav-toggle"
-          aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
-    <span class="bar"></span>
-    <span class="bar"></span>
-    <span class="bar"></span>
-  </button>
+    <!-- Mobile toggle (CSS bars, ASCII-safe) -->
+    <button id="navToggle" class="nav-toggle"
+            aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
+      <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+    </button>
 
-  <!-- Collapsible nav -->
-  <nav id="site-nav">
-    <ul>
-      <li><a href="../index.html">Home</a></li>
-      <li><a href="../blog/">Blog</a></li>
-      <li><a href="../about.html">About</a></li>
-      <li><a href="../contact.html">Contact</a></li>
-      <li><a href="../legal/privacy.html">Privacy</a></li>
-      <li><a href="../legal/terms.html">Terms</a></li>
-      <li><a href="../legal/disclaimer.html">Disclaimer</a></li>
-      <li><a href="../sitemap.html">Sitemap</a></li>
-    </ul>
-  </nav>
-</header>
+    <!-- Collapsible nav -->
+    <nav id="site-nav">
+      <ul>
+        <li><a href="../index.html">Home</a></li>
+        <li><a href="../blog/">Blog</a></li>
+        <li><a href="../about.html">About</a></li>
+        <li><a href="../contact.html">Contact</a></li>
+        <li><a href="../legal/privacy.html">Privacy</a></li>
+        <li><a href="../legal/terms.html">Terms</a></li>
+        <li><a href="../legal/disclaimer.html">Disclaimer</a></li>
+        <li><a href="../sitemap.html">Sitemap</a></li>
+      </ul>
+    </nav>
+  </header>
 
   <main>
-    <!-- ASD:CONTENT_START -->
     
     
     
@@ -51,15 +54,16 @@
     
     
     
+    
+    
+  
+
+  
     
   
 
   
     
-  
-
-  
-    
 
   
     
@@ -69,34 +73,39 @@
     
     
     
-    <!-- ASD:CONTENT_END -->
+    
   </main>
 
   <footer>
-    <p>&copy; 2025 <a href="../index.html">Ace Ultra Premium</a>. All rights reserved.</p>
+    <p>Home Â· <a href="../blog/">Blog</a> Â· <a href="../about.html">About</a> Â·
+      <a href="../contact.html">Contact</a> Â· <a href="../legal/privacy.html">Privacy</a> Â·
+      <a href="../legal/terms.html">Terms</a> Â· <a href="../legal/disclaimer.html">Disclaimer</a> Â·
+      <a href="../sitemap.html">Sitemap</a></p>
+    <p>Â© 2025 Ace Ultra Premium. All rights reserved.</p>
   </footer>
-    <script>
-      (function () {
-        var btn = document.getElementById('navToggle');
-        var nav = document.getElementById('site-nav');
-        if (!btn || !nav) return;
 
-        function set(open) {
-          btn.setAttribute('aria-expanded', open);
-          nav.classList.toggle('open', open);
-          btn.classList.toggle('is-active', open); // NEW: animate bars â†’ X
-        }
-        btn.addEventListener('click', function () {
-          set(btn.getAttribute('aria-expanded') !== 'true');
-        });
-        document.addEventListener('keydown', function (e) {
-          if (e.key === 'Escape') set(false);
-        });
-        nav.addEventListener('click', function (e) {
-          if (e.target && e.target.tagName === 'A') set(false);
-        });
-      })();
-    </script>
+  <script>
+    (function () {
+      var btn = document.getElementById('navToggle');
+      var nav = document.getElementById('site-nav');
+      if (!btn || !nav) return;
+
+      function set(open) {
+        btn.setAttribute('aria-expanded', open);
+        nav.classList.toggle('open', open);
+        btn.classList.toggle('is-active', open);
+      }
+      btn.addEventListener('click', function () {
+        set(btn.getAttribute('aria-expanded') !== 'true');
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') set(false);
+      });
+      nav.addEventListener('click', function (e) {
+        if (e.target && e.target.tagName === 'A') set(false);
+      });
+    })();
+  </script>
 </body>
 </html>
 

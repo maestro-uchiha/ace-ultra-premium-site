@@ -197,7 +197,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
   * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
 }
 
-/* === Safety override: always show the hamburger button on every page === */
+/* Safety override: always show the hamburger button on every page */
 header .nav-toggle {
   display: flex !important;
   visibility: visible !important;
