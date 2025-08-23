@@ -1,46 +1,89 @@
-param([Parameter(Mandatory=$true)][string]$Slug)
+param(
+  [Parameter(Mandatory=$true)]
+  [string]$Slug
+)
 
-$Root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
-Set-Location $Root
+$root = (Resolve-Path "$PSScriptRoot/..").Path
+$blogDir = Join-Path $root "blog"
+$feedPath = Join-Path $root "feed.xml"
+$configPath = Join-Path $root "config.json"
 
-function Get-Domain {
-  if (Test-Path ".\config.json") {
-    try { $cfg = Get-Content .\config.json -Raw | ConvertFrom-Json; if ($cfg.site.url) { return ($cfg.site.url.TrimEnd('/') + '/') } } catch {}
-  }
-  return "https://YOUR-DOMAIN.example/"
+# Normalize input: allow full path or filename; strip .html; normalize dashes
+$in = $Slug
+if ($in -match '[\\/]|\.html$') { $in = [IO.Path]::GetFileNameWithoutExtension($in) }
+$in = $in.Trim()
+$in = ($in -replace '[\u2013\u2014]', '-')              # en/em dash → hyphen
+$in = ($in -replace '\s+', '-')                         # spaces → hyphen
+
+# Preferred target path
+$target = Join-Path $blogDir ($in + ".html")
+
+# If not found, try a tolerant lookup by basename (case-insensitive; dash-normalized)
+if (-not (Test-Path $target)) {
+  $cand = Get-ChildItem -Path $blogDir -Filter *.html -File |
+    Where-Object {
+      ($_.BaseName -ieq $in) -or
+      (($_.BaseName -replace '[\u2013\u2014]', '-') -ieq $in)
+    } |
+    Select-Object -First 1
+
+  if ($cand) { $target = $cand.FullName }
 }
 
-$postPath = Join-Path $Root ("blog\" + $Slug + ".html")
-if (-not (Test-Path $postPath)) { Write-Error "Post not found: $postPath"; exit 1 }
+if (-not (Test-Path $target)) {
+  Write-Error "Post not found: $target"
+  Write-Host "`nExisting posts:"
+  Get-ChildItem -Path $blogDir -Filter *.html -File | Select-Object -ExpandProperty Name
+  exit 1
+}
 
-Remove-Item $postPath -Force
-Write-Host "[ASD] Deleted blog/$Slug.html"
+# Compute slug from the file we’re actually deleting
+$basename = [IO.Path]::GetFileNameWithoutExtension($target)
 
-# Remove from feed.xml
-$dom = Get-Domain
-$feedPath = Join-Path $Root "feed.xml"
+# Delete the file
+Remove-Item -Force $target
+Write-Host "[ASD] Deleted blog/$basename.html"
+
+# Try to update feed.xml (best-effort)
 if (Test-Path $feedPath) {
   try {
     [xml]$rss = Get-Content $feedPath
     $chan = $rss.rss.channel
-    $postUrl = ($dom.TrimEnd('/') + "/blog/$Slug.html")
-    $toRemove = @()
-    foreach($it in $chan.item) { if ($it.link -and $it.link -eq $postUrl) { $toRemove += $it } }
-    foreach($n in $toRemove) { $null = $chan.RemoveChild($n) }
-    $rss.Save($feedPath)
-    Write-Host "[ASD] feed.xml cleaned"
-  } catch { Write-Warning "[ASD] Could not update feed.xml: $_" }
+    if ($chan -and $chan.item) {
+      # Determine absolute link base if config.site.url is set
+      $base = ""
+      if (Test-Path $configPath) {
+        try {
+          $cfg = Get-Content $configPath -Raw | ConvertFrom-Json
+          if ($cfg.site -and $cfg.site.url) { $base = [string]$cfg.site.url }
+        } catch {}
+      }
+      $relLink  = "/blog/$basename.html"
+      $absLink1 = ($base.TrimEnd('/') + $relLink)     # https://.../blog/slug.html
+      $absLink2 = ($base.TrimEnd('/') + "/blog/$basename.html")
+
+      $toRemove = @()
+      foreach ($it in @($chan.item)) {
+        $linkNode = $it.link
+        $guidNode = $it.guid
+        $linkVal = if ($linkNode) { $linkNode.InnerText } else { "" }
+        $guidVal = if ($guidNode) { $guidNode.InnerText } else { "" }
+        if ($linkVal -eq $absLink1 -or $linkVal -eq $absLink2 -or $linkVal -eq $relLink -or
+            $guidVal -eq $absLink1 -or $guidVal -eq $absLink2 -or $guidVal -eq $relLink) {
+          $toRemove += $it
+        }
+      }
+      foreach ($it in $toRemove) { [void]$chan.RemoveChild($it) }
+      if ($toRemove.Count -gt 0) {
+        $rss.Save($feedPath)
+        Write-Host "[ASD] feed.xml updated (removed $($toRemove.Count) item(s))"
+      }
+    }
+  } catch {
+    Write-Warning "[ASD] Could not update feed.xml: $_"
+  }
 }
 
-# --- Friendly manual-next-step hint (does not execute bake)
-$brandHint = "Your Brand"
-$moneyHint = "https://your-domain.com"
-try {
-  if ($cfg) {
-    if ($cfg.site -and $cfg.site.name) { $brandHint = $cfg.site.name }
-    elseif ($cfg.brand) { $brandHint = $cfg.brand }
-    if ($cfg.moneySite) { $moneyHint = $cfg.moneySite }
-  }
-} catch {}
-Write-Host "`n[ASD] Next (manual):"
-Write-Host ("  .\parametric-static\scripts\bake.ps1 -Brand ""{0}"" -Money ""{1}""" -f $brandHint, $moneyHint)
+Write-Host "`nNext steps:"
+Write-Host "  .\parametric-static\scripts\build-blog-index.ps1 -PageSize 10"
+Write-Host "  .\parametric-static\scripts\bake.ps1 -Brand \"Ace Ultra Premium\" -Money \"https://acecartstore.com\""

@@ -1,0 +1,126 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ASD: New Post (blank)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile","-ExecutionPolicy","Bypass","-File",
+        "parametric-static/scripts/new-post.ps1",
+        "-Title","${input:asdTitle}",
+        "-Slug","${input:asdSlug}",
+        "-Description","${input:asdDesc}"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "ASD: New Post (from file)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile","-ExecutionPolicy","Bypass","-File",
+        "parametric-static/scripts/new-post.ps1",
+        "-Title","${input:asdTitle}",
+        "-Slug","${input:asdSlug}",
+        "-Description","${input:asdDesc}",
+        "-BodyPath","${input:asdBodyPath}"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "ASD: Update Post (from file)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile","-ExecutionPolicy","Bypass","-File",
+        "parametric-static/scripts/update-post.ps1",
+        "-Slug","${input:asdSlug}",
+        "-Title","${input:asdTitleOptional}",
+        "-Description","${input:asdDescOptional}",
+        "-BodyPath","${input:asdBodyPath}",
+        "-TouchFileTime"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "ASD: Rename Post",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile","-ExecutionPolicy","Bypass","-File",
+        "parametric-static/scripts/rename-post.ps1",
+        "-OldSlug","${input:asdOldSlug}",
+        "-NewSlug","${input:asdNewSlug}",
+        "-Title","${input:asdTitle}",
+        "-LeaveRedirect"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "ASD: Delete Post",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile","-ExecutionPolicy","Bypass","-File",
+        "parametric-static/scripts/delete-post.ps1",
+        "-Slug","${input:asdSlug}"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "ASD: Build Blog Pagination",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile","-ExecutionPolicy","Bypass","-File",
+        "parametric-static/scripts/build-blog-index.ps1",
+        "-PageSize","${input:asdPageSize}"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "ASD: Bake",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile","-ExecutionPolicy","Bypass","-File",
+        "parametric-static/scripts/bake.ps1",
+        "-Brand","${input:asdBrand}",
+        "-Money","${input:asdMoney}"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "ASD: Build + Bake",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile","-ExecutionPolicy","Bypass","-Command",
+        "& { ./parametric-static/scripts/build-blog-index.ps1 -PageSize ${input:asdPageSize}; ./parametric-static/scripts/bake.ps1 -Brand '${input:asdBrand}' -Money '${input:asdMoney}' }"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    { "id": "asdTitle", "type": "promptString", "description": "Post Title", "default": "Ace Ultra Premium — First Impressions" },
+    { "id": "asdTitleOptional", "type": "promptString", "description": "Post Title (optional)", "default": "" },
+    { "id": "asdSlug", "type": "promptString", "description": "Slug (kebab-case)", "default": "first-impressions" },
+    { "id": "asdOldSlug", "type": "promptString", "description": "Old Slug", "default": "first-post" },
+    { "id": "asdNewSlug", "type": "promptString", "description": "New Slug", "default": "ace-first-impressions" },
+    { "id": "asdDesc", "type": "promptString", "description": "Short Description", "default": "Short summary of the article." },
+    { "id": "asdDescOptional", "type": "promptString", "description": "Short Description (optional)", "default": "" },
+    { "id": "asdBodyPath", "type": "promptString", "description": "BodyPath (.md or .html, optional)", "default": "" },
+    { "id": "asdPageSize", "type": "promptString", "description": "Blog posts per page", "default": "10" },
+    { "id": "asdBrand", "type": "promptString", "description": "Brand for bake", "default": "Ace Ultra Premium" },
+    { "id": "asdMoney", "type": "promptString", "description": "Money site URL", "default": "https://acecartstore.com" }
+  ]
+}
