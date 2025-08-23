@@ -5,6 +5,7 @@
 #  - Rewrites root-absolute links -> prefix-relative
 #  - Normalizes en/em dashes (and mojibake) to "|"
 #  - Rebuilds /blog/ index (prefers <title>, fallback first <h1>)
+#  - Trims content and collapses blank lines to avoid growing whitespace
 #  - Generates sitemap.xml from actual files
 #  - Preserves robots.txt; auto-creates default strict rules if missing,
 #    then appends a single absolute Sitemap line from config.site.url
@@ -184,6 +185,26 @@ if (-not ($c | Get-Member -Name moneySite -MemberType NoteProperty)) { Add-Membe
 $c | ConvertTo-Json -Depth 12 | Set-Content -Encoding UTF8 $CfgPath
 Write-Host "[ASD] config.json updated"
 
+# ---- Helpers to tame whitespace around content/main
+function Normalize-BlockSpacing {
+  param([string]$s)
+  if ($null -eq $s) { return $s }
+  $s = $s.Trim()
+  $s = $s -replace '(?:\r?\n){3,}', "`r`n`r`n"
+  return $s
+}
+function Trim-MainRegion {
+  param([string]$html)
+  if ([string]::IsNullOrEmpty($html)) { return $html }
+  return [regex]::Replace($html, '(?is)(<main\b[^>]*>)(.*?)(</main>)', {
+    param($m)
+    $pre = $m.Groups[1].Value
+    $mid = Normalize-BlockSpacing $m.Groups[2].Value
+    $suf = $m.Groups[3].Value
+    return $pre + $mid + $suf
+  })
+}
+
 # ---- Extract original page content (markers > body > strip chrome; single <main> in layout)
 function Extract-Content {
   param([string]$raw)
@@ -201,6 +222,8 @@ function Extract-Content {
   $m = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
   if ($m.Success) { $raw = $m.Groups[1].Value }
   $raw = [regex]::Replace($raw, '(?is)</?main\b[^>]*>', '')
+  # Trim and collapse blank lines in extracted block
+  $raw = Normalize-BlockSpacing $raw
   return $raw
 }
 
@@ -210,6 +233,7 @@ Get-ChildItem -Path $RootDir -Recurse -File |
   ForEach-Object {
     $raw = Get-Content $_.FullName -Raw
     $content = Extract-Content $raw
+    $content = Normalize-BlockSpacing $content
 
     # Title: prefer first <h1> in content, fallback to filename
     $tm = [regex]::Match($content, '(?is)<h1[^>]*>(.*?)</h1>')
@@ -228,9 +252,10 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $final = $final.Replace('{{YEAR}}', "$Year")
     $final = $final.Replace('{{PREFIX}}', $prefix)
 
-    # Fix absolute-root links and normalize dashes last
+    # Fix absolute-root links, normalize dashes, and trim the <main> region
     $final = Rewrite-RootLinks $final $prefix
     $final = Normalize-DashesToPipe $final
+    $final = Trim-MainRegion $final
 
     Set-Content -Encoding UTF8 $_.FullName $final
     Write-Host ("[ASD] Wrapped {0} (prefix='{1}')" -f $_.FullName.Substring($RootDir.Length+1), $prefix)
