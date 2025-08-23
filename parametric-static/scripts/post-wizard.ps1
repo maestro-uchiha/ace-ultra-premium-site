@@ -1,36 +1,50 @@
 param(
-  [ValidateSet("New","Edit","Rename","Delete","Extract","Apply","Redirects","Build","Bake","BuildBake","CheckLinks","ListPosts","OpenPost","Config","Git","Menu")]
+  [ValidateSet(
+    "Menu","New","Edit","Rename","Delete","Extract","Apply",
+    "Redirects","Build","Bake","BuildBake","CheckLinks",
+    "ListPosts","OpenPost","Config","Git"
+  )]
   [string]$Mode = "Menu",
   [switch]$DryRun
 )
 
-# --- Paths
+# ---------------------------------------
+# Paths
+# ---------------------------------------
 $Root = (Resolve-Path "$PSScriptRoot/..").Path
 $Blog = Join-Path $Root "blog"
 $Cfg  = Join-Path $Root "config.json"
-
 Set-Location $Root
 
-# --- Helpers
+# ---------------------------------------
+# Helpers
+# ---------------------------------------
 function Ask($label, $def="") {
   if ($def -ne "") { $label = "$label [$def]" }
   $v = Read-Host $label
   if ([string]::IsNullOrWhiteSpace($v)) { return $def } else { return $v }
 }
+
 function Confirm($q) {
   $ans = Read-Host "$q (y/N)"
   return ($ans -match '^(y|yes)$')
 }
+
 function Normalize-Slug($s) {
   if ($s -match '[\\/]|\.html$') { $s = [IO.Path]::GetFileNameWithoutExtension($s) }
-  $s = $s -replace '[\u2013\u2014]','-' # en/em dash -> hyphen
+  $s = $s -replace '[\u2013\u2014]','-'   # en/em dash -> hyphen
   $s = $s -replace '\s+','-'
   $s.Trim('-').ToLower()
 }
+
 function Run($cmd) {
-  Write-Host "`n[ASD] To run:"; Write-Host "  $cmd"
-  if (-not $DryRun -and (Confirm "Run it now?")) { Invoke-Expression $cmd }
+  Write-Host "`n[ASD] To run:"
+  Write-Host "  $cmd"
+  if (-not $DryRun -and (Confirm "Run it now?")) {
+    Invoke-Expression $cmd
+  }
 }
+
 function Get-Config() {
   $obj = $null
   if (Test-Path $Cfg) {
@@ -38,18 +52,21 @@ function Get-Config() {
   }
   return $obj
 }
+
 function Default-Brand() {
   $c = Get-Config
   if ($c -and $c.site -and $c.site.name) { return $c.site.name }
   if ($c -and $c.brand) { return $c.brand }
   return "Ace Ultra Premium"
 }
+
 function Default-Money() {
   $c = Get-Config
   if ($c -and $c.moneySite) { return $c.moneySite }
   if ($c -and $c.site -and $c.site.url) { return $c.site.url }
   return "https://acecartstore.com"
 }
+
 function List-Posts() {
   if (!(Test-Path $Blog)) { return @() }
   return Get-ChildItem -Path $Blog -Filter *.html -File |
@@ -57,7 +74,9 @@ function List-Posts() {
     Sort-Object LastWriteTime -Descending
 }
 
-# --- Actions
+# ---------------------------------------
+# Actions
+# ---------------------------------------
 function Do-New() {
   $title = Ask "Title" "New Post"
   $slug  = Normalize-Slug (Ask "Slug (kebab-case)" (($title.ToLower() -replace '[^a-z0-9]+','-').Trim('-')))
@@ -84,7 +103,7 @@ function Do-Rename() {
   $old = Normalize-Slug (Ask "Old slug")
   $new = Normalize-Slug (Ask "New slug")
   $title = Ask "New Title (optional)" ""
-  $keep  = Confirm "Leave redirect from old → new?"
+  $keep  = Confirm "Leave redirect from old -> new?"
   $cmd = "& `"$PSScriptRoot/rename-post.ps1`" -OldSlug `"$old`" -NewSlug `"$new`""
   if ($title) { $cmd += " -Title `"$title`"" }
   if ($keep)  { $cmd += " -LeaveRedirect" }
@@ -115,7 +134,9 @@ function Do-ApplyDraft() {
 
 function Do-Redirects() {
   Write-Host "`nRedirects:"
-  Write-Host "  1) Add    2) Remove by index    3) List"
+  Write-Host "  1) Add"
+  Write-Host "  2) Remove by index"
+  Write-Host "  3) List"
   $ch = Read-Host "Choose 1-3"
   switch ($ch) {
     '1' {
@@ -166,16 +187,21 @@ function Do-CheckLinks() {
 function Do-ListPosts() {
   $items = List-Posts
   if ($items.Count -eq 0) { Write-Host "[ASD] No posts found."; return }
-  Write-Host "`nPosts:"
+  Write-Host "`nPosts (most recent first):"
   $i=1
-  foreach ($f in $items) { Write-Host ("  {0}. {1}  (modified {2:yyyy-MM-dd})" -f $i, $f.Name, $f.LastWriteTime); $i++ }
+  foreach ($f in $items) {
+    Write-Host ("  {0}. {1}  (modified {2:yyyy-MM-dd})" -f $i, $f.Name, $f.LastWriteTime)
+    $i++
+  }
 }
 
 function Do-OpenPost() {
   $slug = Normalize-Slug (Ask "Slug to open in VS Code")
   $path = Join-Path $Blog ($slug + ".html")
   if (!(Test-Path $path)) {
-    $cand = Get-ChildItem -Path $Blog -Filter *.html -File | Where-Object { $_.BaseName -ieq $slug } | Select-Object -First 1
+    $cand = Get-ChildItem -Path $Blog -Filter *.html -File |
+      Where-Object { $_.BaseName -ieq $slug } |
+      Select-Object -First 1
     if ($cand) { $path = $cand.FullName }
   }
   if (Test-Path $path) {
@@ -188,12 +214,30 @@ function Do-OpenPost() {
 
 function Do-Config() {
   $c = Get-Config
-  $brand = Ask "Brand (config.site.name)" (if ($c -and $c.site -and $c.site.name) { $c.site.name } else { "Ace Ultra Premium" })
-  $url   = Ask "Site URL (config.site.url)" (if ($c -and $c.site -and $c.site.url) { $c.site.url } else { "" })
-  $money = Ask "Money site (legacy config.moneySite)" (if ($c -and $c.moneySite) { $c.moneySite } else { $url })
 
+  # Compute defaults without inline if-expressions in parentheses
+  $brandDef = "Ace Ultra Premium"
+  if ($c) {
+    if ($c.site -and $c.site.name) { $brandDef = $c.site.name }
+    elseif ($c.brand) { $brandDef = $c.brand }
+  }
+
+  $urlDef = ""
+  if ($c -and $c.site -and $c.site.url) { $urlDef = $c.site.url }
+
+  $moneyDef = $urlDef
+  if ($c -and $c.moneySite) { $moneyDef = $c.moneySite }
+
+  # Ask user
+  $brand = Ask "Brand (config.site.name)" $brandDef
+  $url   = Ask "Site URL (config.site.url)" $urlDef
+  $money = Ask "Money site (legacy config.moneySite)" $moneyDef
+
+  # Write config
   if (-not $c) { $c = [pscustomobject]@{} }
-  if (-not ($c | Get-Member -Name site -MemberType NoteProperty)) { $c | Add-Member -NotePropertyName site -NotePropertyValue ([pscustomobject]@{}) }
+  if (-not ($c | Get-Member -Name site -MemberType NoteProperty)) {
+    $c | Add-Member -NotePropertyName site -NotePropertyValue ([pscustomobject]@{})
+  }
   $c.site.name = $brand
   $c.site.url  = $url
   $c.moneySite = $money
@@ -205,12 +249,11 @@ function Do-Config() {
 
 function Do-Git() {
   Write-Host "`nGit:"
-  Write-Host "  1) Status   2) Add all + Commit + Push"
+  Write-Host "  1) Status"
+  Write-Host "  2) Add all + Commit + Push"
   $ch = Read-Host "Choose 1-2"
   switch ($ch) {
-    '1' {
-      git status
-    }
+    '1' { git status }
     default {
       $msg = Ask "Commit message" "content: update"
       $chain = "git add .; git commit -m `"$msg`"; git push"
@@ -219,40 +262,44 @@ function Do-Git() {
   }
 }
 
-# --- Menu
+# ---------------------------------------
+# Menu
+# ---------------------------------------
 function Show-Menu() {
   Write-Host ""
-  Write-Host "ASD Wizard — pick an option:"
+  Write-Host "ASD Wizard - pick an option:"
   Write-Host "  1) New post           2) Edit post            3) Rename post"
-  Write-Host "  4) Delete post        5) Extract → drafts     6) Apply draft → post"
-  Write-Host "  7) Redirects          8) Build pagination     9) Bake"
-  Write-Host " 10) Build + Bake      11) Check links         12) List posts"
-  Write-Host " 13) Open post         14) Config (brand/url)  15) Git"
+  Write-Host "  4) Delete post        5) Extract to drafts     6) Apply draft to post"
+  Write-Host "  7) Redirects          8) Build pagination      9) Bake"
+  Write-Host " 10) Build + Bake      11) Check links          12) List posts"
+  Write-Host " 13) Open post         14) Config (brand/url)   15) Git"
   Write-Host "  q) Quit"
   $ch = Read-Host "Enter choice"
   switch ($ch) {
-    '1' { Do-New }
-    '2' { Do-Edit }
-    '3' { Do-Rename }
-    '4' { Do-Delete }
-    '5' { Do-Extract }
-    '6' { Do-ApplyDraft }
-    '7' { Do-Redirects }
-    '8' { Do-Build }
-    '9' { Do-Bake }
+    '1'  { Do-New }
+    '2'  { Do-Edit }
+    '3'  { Do-Rename }
+    '4'  { Do-Delete }
+    '5'  { Do-Extract }
+    '6'  { Do-ApplyDraft }
+    '7'  { Do-Redirects }
+    '8'  { Do-Build }
+    '9'  { Do-Bake }
     '10' { Do-BuildBake }
     '11' { Do-CheckLinks }
     '12' { Do-ListPosts }
     '13' { Do-OpenPost }
     '14' { Do-Config }
     '15' { Do-Git }
-    'q' { return $false }
+    'q'  { return $false }
     default { Write-Host "Invalid choice." }
   }
   return $true
 }
 
-# --- Direct mode or interactive
+# ---------------------------------------
+# Direct mode or interactive
+# ---------------------------------------
 switch ($Mode) {
   "New"       { Do-New }
   "Edit"      { Do-Edit }
@@ -270,7 +317,7 @@ switch ($Mode) {
   "Config"    { Do-Config }
   "Git"       { Do-Git }
   default {
-    while (Show-Menu) { Start-Sleep -Milliseconds 200 }
+    while (Show-Menu) { Start-Sleep -Milliseconds 150 }
   }
 }
 
