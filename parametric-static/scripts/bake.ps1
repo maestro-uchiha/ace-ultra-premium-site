@@ -2,10 +2,11 @@
 #  Amaterasu Static Deploy (ASD) - bake.ps1
 #  Works on GitHub Pages (project subpath) and custom domains
 #  - Wraps HTML with layout.html and {{PREFIX}}
-#  - Rewrites root-absolute links → prefix-relative
+#  - Rewrites root-absolute links -> prefix-relative
 #  - Normalizes en/em dashes (and mojibake) to "|"
-#  - Rebuilds /blog/ index (now prefers <title>, falls back to first <h1>)
-#  - Regenerates robots.txt and sitemap.xml from config.site.url + actual files
+#  - Rebuilds /blog/ index (prefers <title>, fallback first <h1>)
+#  - Generates sitemap.xml from actual files
+#  - Preserves robots.txt; appends absolute Sitemap from config.site.url
 # ============================================
 
 param(
@@ -26,6 +27,12 @@ if (-not (Test-Path $LayoutPath)) {
   exit 1
 }
 $Layout = Get-Content $LayoutPath -Raw
+
+# Normalize money URL (adds https:// if missing)
+if ($Money) {
+  $Money = $Money.Trim()
+  if ($Money -notmatch '^(https?:)?//') { $Money = "https://$Money" }
+}
 
 # --- Normalize dashes (UTF-8 and common mojibake) to pipe
 function Normalize-DashesToPipe {
@@ -227,11 +234,11 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     Write-Host ("[ASD] Wrapped {0} (prefix='{1}')" -f $_.FullName.Substring($RootDir.Length+1), $prefix)
   }
 
-# ---- Generate robots.txt and sitemap.xml from actual files + base URL
-function Build-Sitemap-And-Robots {
+# ---- Generate sitemap.xml only (do NOT touch robots.txt here)
+function Build-Sitemap {
   param([string]$BaseUrl)
 
-  Write-Host "[ASD] Using base URL for sitemap/robots: $BaseUrl"
+  Write-Host "[ASD] Using base URL for sitemap: $BaseUrl"
 
   $urls = New-Object System.Collections.Generic.List[object]
 
@@ -244,7 +251,6 @@ function Build-Sitemap-And-Robots {
     } |
     ForEach-Object {
       $rel = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'
-      # Convert "index" files to directory URLs
       if ($rel -ieq 'index.html') {
         $loc = $BaseUrl
       } elseif ($rel -match '^(.+)/index\.html$') {
@@ -252,7 +258,7 @@ function Build-Sitemap-And-Robots {
       } else {
         $loc = ($BaseUrl.TrimEnd('/') + '/' + $rel)
       }
-      # Normalize accidental doubles after concat (keep scheme)
+      # normalize accidental doubles (preserve scheme)
       $loc = $loc -replace ':/','://' -replace '/{2,}','/'
       $loc = $loc -replace '://','§§' -replace '/{2,}','/' -replace '§§','://'
 
@@ -260,7 +266,6 @@ function Build-Sitemap-And-Robots {
       $urls.Add([pscustomobject]@{ loc=$loc; lastmod=$last })
     }
 
-  # sitemap.xml
   $sitemapPath = Join-Path $RootDir 'sitemap.xml'
   $xml = New-Object System.Text.StringBuilder
   [void]$xml.AppendLine('<?xml version="1.0" encoding="UTF-8"?>')
@@ -271,23 +276,26 @@ function Build-Sitemap-And-Robots {
   [void]$xml.AppendLine('</urlset>')
   Set-Content -Encoding UTF8 $sitemapPath $xml.ToString()
   Write-Host "[ASD] sitemap.xml generated ($($urls.Count) urls)"
-
-  # robots.txt
-  $robotsPath = Join-Path $RootDir 'robots.txt'
-  $smap = ($BaseUrl.TrimEnd('/') + '/sitemap.xml')
-  $smap = $smap -replace ':/','://' -replace '/{2,}','/'
-  $smap = $smap -replace '://','§§' -replace '/{2,}','/' -replace '§§','://'
-  $robots = @"
-User-agent: *
-Disallow:
-
-Sitemap: $smap
-"@
-  Set-Content -Encoding UTF8 $robotsPath $robots
-  Write-Host "[ASD] robots.txt generated"
 }
 
 $baseUrl = Get-BaseUrl -CfgPath $CfgPath
-Build-Sitemap-And-Robots -BaseUrl $baseUrl
+Build-Sitemap -BaseUrl $baseUrl
+
+# --- robots.txt: write a single absolute Sitemap line (preserve all rules)
+$robotsPath = Join-Path $RootDir 'robots.txt'
+if ( (Test-Path $robotsPath) -and $c -and $c.site -and $c.site.url ) {
+  $abs = (New-Object Uri((New-Object Uri($c.site.url)), 'sitemap.xml')).AbsoluteUri
+
+  # read existing robots and remove any existing Sitemap lines
+  $rob = Get-Content $robotsPath -Raw
+  $rob = [regex]::Replace($rob, '(?im)^\s*Sitemap:\s*.*\r?\n?', '')
+
+  # ensure trailing newline, then append one canonical Sitemap line
+  if ($rob -notmatch "\r?\n$") { $rob += "`r`n" }
+  $rob += "Sitemap: $abs`r`n"
+
+  Set-Content -Encoding UTF8 $robotsPath $rob
+  Write-Host "[ASD] robots.txt: Sitemap -> $abs"
+}
 
 Write-Host "[ASD] Done."
