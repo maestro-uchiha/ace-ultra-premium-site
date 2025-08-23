@@ -1,44 +1,23 @@
-# Ace Ultra Premium — Amaterasu Static Deploy (ASD)
+# Amaterasu Static Deploy (ASD) — Template
 
-**ASD** is a tiny, fast static site workflow optimized for backlink microsites and simple product blogs.  
-This repo is the Ace Ultra Premium site built with ASD.
+A tiny static boilerplate that “bakes” HTML files using a shared `layout.html`, fixes paths for GitHub Pages subfolders, auto-builds `sitemap.xml`, preserves a strict `robots.txt`, and ships helper scripts for posts, pagination, and redirects.
 
-## What you get
-
-- **Layout-based baking** (`layout.html` + `bake.ps1`) — no runtime includes.
-- **Parametric content** with tokens: `{{BRAND}}`, `{{MONEY}}`, `{{YEAR}}`.
-- **Pagination** for `/blog/` (page size configurable).
-- **Redirect Manager** (`redirects.ps1`) with `redirects.json` + Service Worker + 404 fallback.
-- **GH Pages + Custom Domain** safe routing (works under subpaths and roots).
-- **SEO niceties**: HTML+XML sitemap, RSS feed, meta, OG/Twitter, clean HTML.
-- **Utilities**: link checker, new/rename/delete post helpers.
+- **Changelog:** see [CHANGELOG.md](./CHANGELOG.md)
+- **Current version:** `v1.1.0`
+- **Works with:** GitHub Pages (project subpath) and custom domains
+- **Stack:** Plain HTML/CSS + PowerShell scripts (Windows-friendly)
 
 ---
 
-## Repo structure
+## Quick start
 
-> CI: `.github/workflows/` deploys **`parametric-static/`** to GitHub Pages.
-
----
-
-## Requirements
-
-- **Windows + PowerShell** (5.1 or 7+)
-- **Git**
-- (Optional) **VS Code**
-- First run only, allow scripts:
-  ```powershell
-  Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-
-
----
-
-## Quick sanity check (optional)
-1) Create the config file:
 ```powershell
-Set-Content -Encoding UTF8 .\parametric-static\bake-config.json @'
-{
-  "brand": "Ace Ultra Premium",
-  "url": "https://acecartstore.com"
-}
-'@
+# 1) Allow scripts (first time only)
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
+# 2) Clone your site
+git clone https://github.com/maestro-uchiha/ace-ultra-premium-site.git
+cd ace-ultra-premium-site\parametric-static
+
+# 3) Bake the site (wrap pages + sitemap + robots sitemap URL)
+.\scripts\bake.ps1 -Brand "Ace Ultra Premium" -Money "https://acecartstore.com"
