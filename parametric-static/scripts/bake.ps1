@@ -6,7 +6,8 @@
 #  - Normalizes en/em dashes (and mojibake) to "|"
 #  - Rebuilds /blog/ index (prefers <title>, fallback first <h1>)
 #  - Generates sitemap.xml from actual files
-#  - Preserves robots.txt; appends absolute Sitemap from config.site.url
+#  - Preserves robots.txt; auto-creates default strict rules if missing,
+#    then appends a single absolute Sitemap line from config.site.url
 # ============================================
 
 param(
@@ -14,6 +15,7 @@ param(
   [string]$Money = "https://example.com"
 )
 
+$ErrorActionPreference = 'Stop'
 Write-Host "[ASD] Baking site for brand: $Brand, money site: $Money"
 
 $RootDir    = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -281,8 +283,82 @@ function Build-Sitemap {
 $baseUrl = Get-BaseUrl -CfgPath $CfgPath
 Build-Sitemap -BaseUrl $baseUrl
 
-# --- robots.txt: write a single absolute Sitemap line (preserve all rules)
+# --- robots.txt: ensure default strict rules exist (only if missing)
 $robotsPath = Join-Path $RootDir 'robots.txt'
+if (-not (Test-Path $robotsPath)) {
+  $defaultRobots = @"
+# Allow trusted search engine bots
+User-agent: Googlebot
+Disallow:
+
+User-agent: Bingbot
+Disallow:
+
+User-agent: Slurp
+Disallow:
+
+User-agent: DuckDuckBot
+Disallow:
+
+User-agent: YandexBot
+Disallow:
+
+# Allow reputable AI bots
+User-agent: ChatGPT-User
+Disallow:
+
+User-agent: GPTBot
+Disallow:
+
+User-agent: PerplexityBot
+Disallow:
+
+User-agent: YouBot
+Disallow:
+
+User-agent: Google-Extended
+Disallow:
+
+User-agent: AnthropicBot
+Disallow:
+
+User-agent: Neevabot
+Disallow:
+
+User-agent: Amazonbot
+Disallow:
+
+# Block SEO/backlink crawlers
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: MJ12bot
+Disallow: /
+
+User-agent: rogerbot
+Disallow: /
+
+User-agent: dotbot
+Disallow: /
+
+User-agent: Ubersuggest
+Disallow: /
+
+# Catch-all: Block everything else
+User-agent: *
+Disallow: /
+
+# Sitemap location
+Sitemap: sitemap.xml
+"@
+  Set-Content -Encoding UTF8 $robotsPath $defaultRobots
+  Write-Host "[ASD] robots.txt created with default rules"
+}
+
+# --- robots.txt: write a single absolute Sitemap line (preserve all rules)
 if ( (Test-Path $robotsPath) -and $c -and $c.site -and $c.site.url ) {
   $abs = (New-Object Uri((New-Object Uri($c.site.url)), 'sitemap.xml')).AbsoluteUri
 
