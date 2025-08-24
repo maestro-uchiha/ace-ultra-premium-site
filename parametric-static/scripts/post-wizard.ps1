@@ -1,36 +1,37 @@
-<# 
+<#
   post-wizard.ps1
   Interactive helper to run common ASD tasks.
   - PowerShell 5.1 compatible
-  - Uses config.json via _lib.ps1 helpers
+  - Reads config.json via _lib.ps1 (single source of truth)
 #>
 
 [CmdletBinding()]
 param()
 
-# Load config
-$__here = Split-Path -Parent $PSCommandPath
-. (Join-Path $__here "_lib.ps1")
-$__cfg   = Get-ASDConfig
-$Brand   = $__cfg.SiteName
-$Money   = $__cfg.StoreUrl
-$Desc    = $__cfg.Description
-$Base    = $__cfg.BaseUrl
-$__paths = Get-ASDPaths
+# Load helpers (single source of truth)
+$here = Split-Path -Parent $PSCommandPath
+. (Join-Path $here "_lib.ps1")
 
 Set-StrictMode -Version Latest
-. "$PSScriptRoot\_lib.ps1"
 
+# Paths + config (ensures defaults and creates config.json if missing)
 $S   = Get-ASDPaths
 $cfg = Get-ASDConfig -Root $S.Root
 
-function Ask($prompt, $default="") {
+function Ask($prompt, $default = "") {
   if ([string]::IsNullOrWhiteSpace($default)) {
     return Read-Host $prompt
   } else {
     $v = Read-Host "$prompt [$default]"
     if ([string]::IsNullOrWhiteSpace($v)) { return $default } else { return $v }
   }
+}
+
+function Ask-YesNo($prompt, [bool]$defaultNo = $true) {
+  $suffix = if ($defaultNo) { "(y/N)" } else { "(Y/n)" }
+  $ans = Read-Host "$prompt $suffix"
+  if ([string]::IsNullOrWhiteSpace($ans)) { return -not $defaultNo }
+  return ($ans -match '^[Yy]')
 }
 
 function Show-Menu {
@@ -40,7 +41,8 @@ function Show-Menu {
   Write-Host "  4) Delete post        5) Extract to drafts     6) Apply draft to post"
   Write-Host "  7) Redirects          8) Build pagination      9) Bake"
   Write-Host " 10) Build + Bake      11) Check links          12) List posts"
-  Write-Host " 13) Open post         14) Edit config.json     q) Quit"
+  Write-Host " 13) Open post         14) Edit config.json     15) Commit all (git)"
+  Write-Host "  q) Quit"
 }
 
 function Do-NewPost {
@@ -49,13 +51,19 @@ function Do-NewPost {
   $desc  = Ask "Description" ""
   $when  = Ask "ISO date (yyyy-MM-dd) or blank for today" ""
 
-  $dateParam = @()
+  $params = @{ Title = $title; Slug = $slug; Description = $desc }
+
   if (-not [string]::IsNullOrWhiteSpace($when)) {
     try { $d = [datetime]::Parse($when) } catch { $d = Get-Date }
-    $dateParam = @('-Date', $d)
+    try {
+      & "$($S.PS)\new-post.ps1" @params -Date $d
+    } catch {
+      # Fallback if your new-post.ps1 doesn't support -Date
+      & "$($S.PS)\new-post.ps1" @params
+    }
+  } else {
+    & "$($S.PS)\new-post.ps1" @params
   }
-
-  & "$($S.PS)\new-post.ps1" -Title $title -Slug $slug -Description $desc @dateParam
 }
 
 function Do-EditPost {
@@ -75,9 +83,9 @@ function Do-EditPost {
 function Do-RenamePost {
   $old = Ask "Old slug"
   $new = Ask "New slug"
-  $keep = Ask "Leave redirect file in place? (y/N)" "N"
+  $keep = Ask-YesNo "Leave redirect file in place?" $true
   $switch = @()
-  if ($keep -match '^[Yy]') { $switch = @('-LeaveRedirect') }
+  if ($keep) { $switch = @('-LeaveRedirect') }
   & "$($S.PS)\rename-post.ps1" -OldSlug $old -NewSlug $new @switch
 }
 
@@ -136,8 +144,8 @@ function Do-BuildPagination {
   & "$($S.PS)\build-blog-index.ps1" -PageSize ([int]$size)
 }
 
-function Do-Bake { & "$($S.PS)\bake.ps1" }
-function Do-BuildBake { & "$($S.PS)\build-and-bake.ps1" }
+function Do-Bake       { & "$($S.PS)\bake.ps1" }
+function Do-BuildBake  { & "$($S.PS)\build-and-bake.ps1" }
 function Do-CheckLinks { & "$($S.PS)\check-links.ps1" }
 
 function Do-ListPosts {
@@ -152,7 +160,12 @@ function Do-OpenPost {
   $p = Join-Path $S.Blog ($slug + ".html")
   if (Test-Path $p) {
     Write-Host "[ASD] Opening $p in VS Code..."
-    Start-Process code -ArgumentList @("--reuse-window","`"$p`"") -ErrorAction SilentlyContinue
+    try {
+      Start-Process code -ArgumentList @("--reuse-window","`"$p`"") -ErrorAction Stop
+    } catch {
+      Write-Warning "VS Code not found on PATH. Opening in Notepad."
+      notepad.exe $p
+    }
   } else {
     Write-Warning "Post not found: $p"
   }
@@ -160,9 +173,129 @@ function Do-OpenPost {
 
 function Do-EditConfig {
   $cfgPath = Join-Path $S.Root "config.json"
-  if (-not (Test-Path $cfgPath)) { $null = Get-ASDConfig -Root $S.Root } # will create default
+  if (-not (Test-Path $cfgPath)) { $null = Get-ASDConfig -Root $S.Root } # ensure exists
   Write-Host "[ASD] Opening $cfgPath..."
-  try { Start-Process code -ArgumentList @("--reuse-window","`"$cfgPath`"") } catch { notepad.exe $cfgPath }
+  try {
+    Start-Process code -ArgumentList @("--reuse-window","`"$cfgPath`"") -ErrorAction Stop
+  } catch {
+    notepad.exe $cfgPath
+  }
+}
+
+# ------- Git helpers (robust; avoid $args name collision) -------
+function Test-GitAvailable {
+  try {
+    $null = (& git --version) 2>$null
+    return ($LASTEXITCODE -eq 0)
+  } catch { return $false }
+}
+
+function Test-InGitRepo {
+  try {
+    $null = (& git rev-parse --is-inside-work-tree) 2>$null
+    return ($LASTEXITCODE -eq 0)
+  } catch { return $false }
+}
+
+function Git-Run([string[]]$GitArgs, [switch]$Capture) {
+  if ($Capture) {
+    $out = & git @GitArgs 2>&1
+    $code = $LASTEXITCODE
+    return @{ code = $code; out = $out }
+  } else {
+    & git @GitArgs
+    return @{ code = $LASTEXITCODE; out = $null }
+  }
+}
+
+function Get-GitRoot {
+  try {
+    $root = (& git rev-parse --show-toplevel) 2>$null
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($root)) { return $root }
+  } catch {}
+  return $null
+}
+
+function Do-CommitAll {
+  if (-not (Test-GitAvailable)) {
+    Write-Error "git is not installed or not on PATH. Install Git and retry."
+    return
+  }
+
+  # Prefer the actual repo root, else fallback to project root
+  $repoRoot = Get-GitRoot
+  if (-not $repoRoot) {
+    if (-not (Ask-YesNo "This folder isn't a git repo. Initialize one at '$($S.Root)'?")) { return }
+    Push-Location $S.Root
+    try {
+      $init = Git-Run -GitArgs @('init') -Capture
+      if ($init.code -ne 0) { Write-Error "git init failed:`n$($init.out)"; return }
+      $bm = Git-Run -GitArgs @('branch','-M','main') -Capture
+      if ($bm.code -ne 0) { Write-Warning "Could not set default branch to 'main':`n$($bm.out)" }
+      Write-Host "[ASD] Git repository initialized at $($S.Root)."
+    } finally { Pop-Location }
+    $repoRoot = $S.Root
+  }
+
+  Push-Location $repoRoot
+  try {
+    & git status
+
+    # Stage everything from the repo root
+    $add = Git-Run -GitArgs @('add','-A','--','.') -Capture
+    if ($add.code -ne 0) {
+      Write-Error "git add failed:`n$($add.out)"
+      return
+    }
+
+    # Any staged changes?
+    $staged = (& git diff --cached --name-only) 2>$null
+    if ([string]::IsNullOrWhiteSpace($staged)) {
+      Write-Host "[ASD] Nothing staged; nothing to commit."
+      return
+    }
+
+    # Commit
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm"
+    $defaultMsg = "asd: batch changes ($ts)"
+    $msg = Ask "Commit message" $defaultMsg
+    if ([string]::IsNullOrWhiteSpace($msg)) { $msg = $defaultMsg }
+
+    $commit = Git-Run -GitArgs @('commit','-m', $msg) -Capture
+    if ($commit.code -ne 0) {
+      Write-Error "git commit failed:`n$($commit.out)"
+      return
+    }
+    Write-Host "[ASD] Commit created."
+
+    # Optional tag
+    if (Ask-YesNo "Create a tag?") {
+      $defaultTag = ""
+      if ($cfg -and $cfg.PSObject.Properties.Name -contains 'Version' -and -not [string]::IsNullOrWhiteSpace($cfg.Version)) {
+        $defaultTag = "v$($cfg.Version)"
+      } else {
+        $defaultTag = "v" + (Get-Date -Format "yyyy.MM.dd.HHmm")
+      }
+      $tag = Ask "Tag name" $defaultTag
+      if (-not [string]::IsNullOrWhiteSpace($tag)) {
+        $tagres = Git-Run -GitArgs @('tag','-a', $tag, '-m', $tag) -Capture
+        if ($tagres.code -ne 0) { Write-Warning "git tag failed:`n$($tagres.out)" } else { Write-Host "[ASD] Tag '$tag' created." }
+      }
+    }
+
+    # Optional push
+    if (Ask-YesNo "Push to remote? (requires your git remote auth)") {
+      $push = Git-Run -GitArgs @('push') -Capture
+      if ($push.code -ne 0) { Write-Warning "git push failed:`n$($push.out)" } else { Write-Host "[ASD] Pushed commits." }
+      if (Ask-YesNo "Push tags too?") {
+        $pt = Git-Run -GitArgs @('push','--tags') -Capture
+        if ($pt.code -ne 0) { Write-Warning "git push --tags failed:`n$($pt.out)" } else { Write-Host "[ASD] Pushed tags." }
+      }
+    }
+
+  } finally {
+    Pop-Location
+  }
 }
 
 while ($true) {
@@ -183,6 +316,7 @@ while ($true) {
     '12' { Do-ListPosts }
     '13' { Do-OpenPost }
     '14' { Do-EditConfig }
+    '15' { Do-CommitAll }
     'q'  { break }
     'Q'  { break }
     default { Write-Host "Unknown choice." }
