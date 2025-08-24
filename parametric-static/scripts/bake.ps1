@@ -6,17 +6,56 @@
    - Normalizes dashes to "|"
    - Rebuilds /blog/ index (basic)
    - Generates sitemap.xml and preserves robots.txt + appends one Sitemap line
+   - Preserves file timestamps so baking doesn't change dates
    ============================================ #>
 
 # Load shared helpers
 . "$PSScriptRoot\_lib.ps1"
 
+# --- local helpers (PS 5.1-safe) ---
+function TryParse-Date([string]$v) {
+  if ([string]::IsNullOrWhiteSpace($v)) { return $null }
+  [datetime]$out = [datetime]::MinValue
+  $ok = [datetime]::TryParse(
+    $v,
+    [System.Globalization.CultureInfo]::InvariantCulture,
+    [System.Globalization.DateTimeStyles]::AssumeLocal,
+    [ref]$out
+  )
+  if ($ok) { return $out } else { return $null }
+}
+
+function Get-MetaDateFromHtml([string]$html) {
+  if ([string]::IsNullOrWhiteSpace($html)) { return $null }
+
+  # 1) <meta name="date" content="YYYY-MM-DD">
+  $m = [regex]::Match($html, '(?is)<meta\s+name\s*=\s*["'']date["'']\s+content\s*=\s*["'']([^"''<>]+)["'']')
+  if ($m.Success) {
+    $dt = TryParse-Date ($m.Groups[1].Value.Trim())
+    if ($dt) { return $dt.ToString('yyyy-MM-dd') }
+  }
+
+  # 2) <time datetime="...">
+  $t = [regex]::Match($html, '(?is)<time[^>]+datetime\s*=\s*["'']([^"''<>]+)["'']')
+  if ($t.Success) {
+    $dt = TryParse-Date ($t.Groups[1].Value.Trim())
+    if ($dt) { return $dt.ToString('yyyy-MM-dd') }
+  }
+
+  return $null
+}
+
+function Preserve-FileTimes($path, [datetime]$origCreateUtc, [datetime]$origWriteUtc) {
+  try { (Get-Item $path).CreationTimeUtc  = $origCreateUtc } catch {}
+  try { (Get-Item $path).LastWriteTimeUtc = $origWriteUtc  } catch {}
+}
+
 $paths = Get-ASDPaths
 $cfg   = Get-ASDConfig
 
-$RootDir   = $paths.Root
-$LayoutPath= $paths.Layout
-$BlogDir   = $paths.Blog
+$RootDir    = $paths.Root
+$LayoutPath = $paths.Layout
+$BlogDir    = $paths.Blog
 
 $Brand = $cfg.SiteName
 $Money = $cfg.StoreUrl
@@ -32,7 +71,7 @@ if (-not (Test-Path $LayoutPath)) {
 }
 $Layout = Get-Content $LayoutPath -Raw
 
-# ---- Build /blog/ index (simple unordered list inside markers)
+# ---- Build /blog/ index (simple unordered list inside markers) ----
 $BlogIndex = Join-Path $BlogDir "index.html"
 if (Test-Path $BlogIndex) {
   $posts = New-Object System.Collections.Generic.List[string]
@@ -43,7 +82,7 @@ if (Test-Path $BlogIndex) {
       $html  = Get-Content $_.FullName -Raw
 
       # Prefer <title>, else first <h1>, else filename
-      $mTitle = [regex]::Match($html, '<title>(.*?)</title>', 'IgnoreCase')
+      $mTitle = [regex]::Match($html, '(?is)<title>(.*?)</title>')
       if ($mTitle.Success) {
         $title = $mTitle.Groups[1].Value
       } else {
@@ -51,10 +90,13 @@ if (Test-Path $BlogIndex) {
         $title = if ($mH1.Success) { $mH1.Groups[1].Value } else { $_.BaseName }
       }
 
+      # Prefer post's meta date; else fallback to creation time
+      $dateDisplay = Get-MetaDateFromHtml $html
+      if (-not $dateDisplay) { $dateDisplay = $_.CreationTime.ToString('yyyy-MM-dd') }
+
       $title = Normalize-DashesToPipe $title
-      $date  = $_.LastWriteTime.ToString('yyyy-MM-dd')
       $rel   = $_.Name
-      $li    = ('<li><a href="./{0}">{1}</a><small> | {2}</small></li>' -f $rel, $title, $date)
+      $li    = ('<li><a href="./{0}">{1}</a><small> | {2}</small></li>' -f $rel, $title, $dateDisplay)
       $posts.Add($li)
     }
 
@@ -71,11 +113,16 @@ $joined
   Write-Host "[ASD] Blog index updated"
 }
 
-# ---- Wrap every HTML (except layout.html) using layout and per-page PREFIX
+# ---- Wrap every HTML (except layout.html) using layout and per-page PREFIX ----
 Get-ChildItem -Path $RootDir -Recurse -File |
   Where-Object { $_.Extension -eq ".html" -and $_.FullName -ne $LayoutPath } |
   ForEach-Object {
-    $raw = Get-Content $_.FullName -Raw
+    # Save original timestamps so the bake doesn't change them
+    $it = Get-Item $_.FullName
+    $origCreateUtc = $it.CreationTimeUtc
+    $origWriteUtc  = $it.LastWriteTimeUtc
+
+    $raw     = Get-Content $_.FullName -Raw
     $content = Extract-Content $raw
 
     # Title: prefer first <h1> in content, fallback to filename
@@ -100,14 +147,17 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $final = Normalize-DashesToPipe $final
 
     Set-Content -Encoding UTF8 $_.FullName $final
+
+    # Restore timestamps (preserve original dates)
+    Preserve-FileTimes $_.FullName $origCreateUtc $origWriteUtc
+
     Write-Host ("[ASD] Wrapped {0} (prefix='{1}')" -f $_.FullName.Substring($RootDir.Length+1), $prefix)
   }
 
-# ---- Generate sitemap.xml and preserve robots.txt while appending one Sitemap line
+# ---- Generate sitemap.xml and preserve robots.txt while appending one Sitemap line ----
 Write-Host "[ASD] Using base URL for sitemap: $Base"
 
 $urls = New-Object System.Collections.Generic.List[object]
-
 Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
   Where-Object {
     $_.FullName -ne $LayoutPath -and
@@ -125,10 +175,10 @@ Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
     } else {
       $loc = ($Base.TrimEnd('/') + '/' + $rel)
     }
-
     $loc = Collapse-DoubleSlashesPreserveScheme $loc
 
-    $last = $_.LastWriteTime.ToString('yyyy-MM-dd')
+    # After restoring times, LastWriteTime reflects real content changes
+    $last = (Get-Item $_.FullName).LastWriteTime.ToString('yyyy-MM-dd')
     $urls.Add([pscustomobject]@{ loc=$loc; lastmod=$last })
   }
 

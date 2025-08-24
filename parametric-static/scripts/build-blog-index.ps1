@@ -10,6 +10,7 @@ $Desc    = $__cfg.Description
 $Base    = $__cfg.BaseUrl
 $__paths = Get-ASDPaths
 
+
 $Root   = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Set-Location $Root
 $BlogDir = Join-Path $Root "blog"
