@@ -1,9 +1,9 @@
 <# 
   new-post.ps1
-  Create a new blog post with ASD body markers and update feed.xml.
+  Create a new blog post with ASD markers and update feed.xml.
   - PowerShell 5.1 compatible
   - Reads config.json via _lib.ps1 (single source of truth)
-  - Prompts for Author if not supplied; defaults to config or "Maestro"
+  - Outputs pretty, structured markup that looks good with your styles.css
 #>
 
 [CmdletBinding()]
@@ -15,81 +15,80 @@ param(
   [string]$Author
 )
 
-. (Join-Path $PSScriptRoot "_lib.ps1")
-
+# Load helpers / config
+. "$PSScriptRoot\_lib.ps1"
 $S   = Get-ASDPaths
 $cfg = Get-ASDConfig -Root $S.Root
 
-# --- Simple HTML escape for meta/text contexts ---
-function HtmlEscape([string]$s) {
-  if ($null -eq $s) { return "" }
-  $s = $s -replace '&','&amp;'
-  $s = $s -replace '<','&lt;'
-  $s = $s -replace '>','&gt;'
-  $s = $s -replace '"','&quot;'
-  return $s
-}
-
-# --- Resolve default author from config or "Maestro" ---
-$defaultAuthor = 'Maestro'
-if ($cfg -ne $null) {
-  if ($cfg.PSObject.Properties.Name -contains 'AuthorName' -and -not [string]::IsNullOrWhiteSpace($cfg.AuthorName)) {
-    $defaultAuthor = $cfg.AuthorName
-  } elseif ($cfg.PSObject.Properties.Name -contains 'author' -and $cfg.author -ne $null) {
-    if ($cfg.author.PSObject.Properties.Name -contains 'name' -and -not [string]::IsNullOrWhiteSpace($cfg.author.name)) {
-      $defaultAuthor = $cfg.author.name
-    } elseif ($cfg.author.PSObject.Properties.Name -contains 'Name' -and -not [string]::IsNullOrWhiteSpace($cfg.author.Name)) {
-      $defaultAuthor = $cfg.author.Name
+# -------- Resolve author name (config first, then param, then default) --------
+function Get-AuthorFromConfig([object]$c){
+  if ($null -eq $c) { return $null }
+  # flat
+  if ($c.PSObject.Properties.Name -contains 'AuthorName' -and -not [string]::IsNullOrWhiteSpace($c.AuthorName)) {
+    return $c.AuthorName
+  }
+  # nested
+  if ($c.PSObject.Properties.Name -contains 'author' -and $c.author -ne $null) {
+    foreach($k in 'name','Name'){
+      if ($c.author.PSObject.Properties.Name -contains $k) {
+        $v = $c.author.$k
+        if (-not [string]::IsNullOrWhiteSpace($v)) { return $v }
+      }
     }
   }
+  return $null
 }
+$authorDefault = (Get-AuthorFromConfig $cfg)
+if ([string]::IsNullOrWhiteSpace($authorDefault)) { $authorDefault = 'Maestro' }
+$authorName = if (-not [string]::IsNullOrWhiteSpace($Author)) { $Author } else { $authorDefault }
 
-# --- If Author not supplied, ask the user (defaulting to resolved default) ---
-$authorName = $defaultAuthor
-if ($PSBoundParameters.ContainsKey('Author') -and -not [string]::IsNullOrWhiteSpace($Author)) {
-  $authorName = $Author
-} elseif (-not $PSBoundParameters.ContainsKey('Author')) {
-  $input = Read-Host "Author name [$defaultAuthor]"
-  if (-not [string]::IsNullOrWhiteSpace($input)) { $authorName = $input }
-}
-
-# --- Sanitize slug ---
+# -------- Sanitize slug --------
 $slug = $Slug
 if ($slug) { $slug = $slug.Trim().ToLower() }
 $slug = $slug -replace '\s+','-'
 $slug = $slug -replace '[^a-z0-9\-]',''
 if ([string]::IsNullOrWhiteSpace($slug)) { throw "Slug became empty after sanitization." }
 
-# --- Paths / ensure blog dir ---
+# -------- Paths / ensure blog dir --------
 $blogDir = $S.Blog
 New-Item -ItemType Directory -Force -Path $blogDir | Out-Null
 $outPath = Join-Path $blogDir ($slug + ".html")
 if (Test-Path $outPath) { Write-Error "Post already exists: $outPath"; exit 1 }
 
-# --- Compose HTML (no ASD markers in <head>; body markers only) ---
+# -------- Compose HTML (no ASD markers in <title>/<meta>, markers only around content) --------
 $titleText = $Title.Trim()
-$titleEsc  = HtmlEscape($titleText)
-$descEsc   = HtmlEscape($Description)
+$descText  = $Description
 $dateIso   = $Date.ToString('yyyy-MM-dd')
-$authorEsc = HtmlEscape($authorName)
 
+# NOTE: layout.html + bake.ps1 take the first <h1> inside content as the page title.
+# We keep a simple <title> for raw files; it will be replaced during bake.
 $html = @"
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>$titleEsc</title>
-  <meta name="description" content="$descEsc">
-  <meta name="author" content="$authorEsc">
+  <title>$titleText</title>
+  <meta name="description" content="$descText">
+  <meta name="author" content="$authorName">
   <meta name="date" content="$dateIso">
 </head>
 <body>
 <main>
   <!-- ASD:CONTENT_START -->
-  <article>
-    <h1>$titleEsc</h1>
-    <p><em>$dateIso</em></p>
-    <p>Write your post here...</p>
+  <article class="post">
+    <header class="post-head">
+      <h1>$titleText</h1>
+      <p class="muted">By $authorName &bull; <time datetime="$dateIso">$dateIso</time></p>
+    </header>
+
+    <div class="post-body">
+      <p>Write your post here...</p>
+    </div>
+
+    <footer class="post-foot muted">
+      <hr>
+      <p>Tags: <em>none</em></p>
+    </footer>
   </article>
   <!-- ASD:CONTENT_END -->
 </main>
@@ -100,7 +99,7 @@ $html = @"
 Set-Content -Encoding UTF8 -Path $outPath -Value $html
 Write-Host "[ASD] Created blog\$slug.html"
 
-# --- Update (or create) a simple feed.xml ---
+# -------- Update (or create) a simple feed.xml --------
 $feedPath = Join-Path $S.Root "feed.xml"
 if (-not (Test-Path $feedPath)) {
   $feedInit = @"
@@ -111,7 +110,11 @@ if (-not (Test-Path $feedPath)) {
 "@
   Set-Content -Encoding UTF8 -Path $feedPath -Value $feedInit
 } else {
-  try { $feed = Get-Content -Raw -ErrorAction Stop $feedPath } catch { $feed = "" }
+  try {
+    $feed = Get-Content -Raw -ErrorAction Stop $feedPath
+  } catch {
+    $feed = ""
+  }
   if ($feed -match '<updated>.*?</updated>') {
     $feed = [regex]::Replace($feed, '<updated>.*?</updated>', ('<updated>' + (Get-Date -Format o) + '</updated>'))
   } else {

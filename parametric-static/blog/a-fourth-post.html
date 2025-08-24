@@ -1,29 +1,53 @@
-﻿<!DOCTYPE html>
+﻿<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta http-equiv="x-ua-compatible" content="ie=edge" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <title>A Fourth Post · Ace Ultra Premium</title>
-  <meta name="description" content="Premium {{BRAND}} | quality, reliability, trust." />
-  <link rel="icon" href="../assets/favicon.ico" />
-  <link rel="stylesheet" href="../assets/asd.css" />
+  <title>A Fourth Post | Ace Ultra Premium</title>
+  <meta name="description" content="Premium {{BRAND}} | quality, reliability, trust.">
+  <link rel="canonical" href="../index.html">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="A Fourth Post | Ace Ultra Premium">
+  <meta property="og:description" content="Premium {{BRAND}} | quality, reliability, trust.">
+  <meta property="og:image" content="../assets/img/og.jpg">
+  <meta property="og:type" content="website">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="icon" href="../assets/favicon.ico">
+  <link rel="stylesheet" href="../assets/css/style.css">
+
+  <link rel="alternate" type="application/rss+xml" title="Ace Ultra Premium Blog" href="../feed.xml">
 </head>
 <body>
-  <header class="asd-site-header">
-    <div class="asd-container">
-      <a class="asd-brand" href="../index.html">Ace Ultra Premium</a>
-      <nav class="asd-nav">
-        <a href="../index.html">Home</a>
-        <a href="../blog/index.html">Blog</a>
-        <a href="../about.html">About</a>
-        <a href="https://example.com" target="_blank" rel="noopener">Store</a>
-      </nav>
-    </div>
+  <header>
+    <h1><a href="../index.html">Ace Ultra Premium</a></h1>
+
+    <!-- Mobile toggle (CSS bars, ASCII-safe) -->
+    <button id="navToggle" class="nav-toggle"
+            aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
+      <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+    </button>
+
+    <!-- Collapsible nav -->
+    <nav id="site-nav">
+      <ul>
+        <li><a href="../index.html">Home</a></li>
+        <li><a href="../blog/">Blog</a></li>
+        <li><a href="../about.html">About</a></li>
+        <li><a href="../contact.html">Contact</a></li>
+        <li><a href="../legal/privacy.html">Privacy</a></li>
+        <li><a href="../legal/terms.html">Terms</a></li>
+        <li><a href="../sitemap.html">Sitemap</a></li>
+      </ul>
+    </nav>
   </header>
 
-  <main class="asd-main asd-container">
+  <main>
+    
     
     
     
@@ -39,14 +63,47 @@
   
   
   
+  
   </main>
 
-  <footer class="asd-site-footer">
-    <div class="asd-container">
-      <p>© 2025 Ace Ultra Premium. All rights reserved.</p>
-      <p><a href="../legal/terms.html">Terms</a> · <a href="../legal/privacy.html">Privacy</a></p>
-    </div>
-  </footer>
+<footer>
+  <p>
+    <a href="../index.html">Home</a> |
+    <a href="../blog/">Blog</a> |
+    <a href="../about.html">About</a> |
+    <a href="../contact.html">Contact</a> |
+    <a href="../legal/privacy.html">Privacy</a> |
+    <a href="../legal/terms.html">Terms</a> |
+    <a href="../sitemap.html">Sitemap</a>
+  </p>
+  <p>&copy; 2025 Ace Ultra Premium. All rights reserved.</p>
+</footer>
+
+  <script>
+    (function () {
+      var btn = document.getElementById('navToggle');
+      var nav = document.getElementById('site-nav');
+      if (!btn || !nav) return;
+
+      function set(open) {
+        btn.setAttribute('aria-expanded', open);
+        nav.classList.toggle('open', open);
+        btn.classList.toggle('is-active', open);
+      }
+      btn.addEventListener('click', function () {
+        set(btn.getAttribute('aria-expanded') !== 'true');
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') set(false);
+      });
+      nav.addEventListener('click', function (e) {
+        if (e.target && e.target.tagName === 'A') set(false);
+      });
+    })();
+  </script>
 </body>
 </html>
+
+
+
 
