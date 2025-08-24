@@ -7,6 +7,7 @@
    - Rebuilds /blog/ index (basic)
    - Generates sitemap.xml and preserves robots.txt + appends one Sitemap line
    - Preserves file timestamps so baking doesn't change dates
+   - Ensures both ASD:CONTENT_* and ASD:BODY_* pages wrap correctly
    ============================================ #>
 
 # Load shared helpers
@@ -123,6 +124,8 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $origWriteUtc  = $it.LastWriteTimeUtc
 
     $raw     = Get-Content $_.FullName -Raw
+
+    # NEW: robust content extraction supports ASD:CONTENT_* or ASD:BODY_*
     $content = Extract-Content $raw
 
     # Title: prefer first <h1> in content, fallback to filename
@@ -163,7 +166,7 @@ Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
     $_.FullName -ne $LayoutPath -and
     $_.FullName -notmatch '\\assets\\' -and
     $_.FullName -notmatch '\\partials\\' -and
-    $_.Name -ne '404.html'
+    $_.Name -ne '404.html'   # exclude 404 only from sitemap (still wrapped above)
   } |
   ForEach-Object {
     $rel = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'

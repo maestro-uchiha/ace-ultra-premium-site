@@ -4,6 +4,7 @@
    - Config load/save (config.json is the single source of truth)
    - Backward-compat migration from old { "site": { ... } } schema
    - URL + HTML helpers
+   - Robust Extract-Content supports ASD:CONTENT_* and ASD:BODY_*
    =============================== #>
 
 # Remember where this file lives (scripts folder)
@@ -199,20 +200,30 @@ function Rewrite-RootLinks {
 
 function Extract-Content {
   param([string]$raw)
-  $mark = [regex]::Match($raw, '(?is)<!--\s*ASD:CONTENT_START\s*-->(.*?)<!--\s*ASD:CONTENT_END\s*-->')
+
+  if ([string]::IsNullOrWhiteSpace($raw)) { return $raw }
+
+  # 1) ASD markers take precedence (CONTENT_* or BODY_*)
+  $mark = [regex]::Match($raw, '(?is)<!--\s*ASD:(CONTENT|BODY)_START\s*-->(.*?)<!--\s*ASD:(CONTENT|BODY)_END\s*-->')
   if ($mark.Success) {
-    $raw = $mark.Groups[1].Value
-  } else {
-    $body = [regex]::Match($raw, '(?is)<body[^>]*>(.*?)</body>')
-    if ($body.Success) { $raw = $body.Groups[1].Value }
+    return $mark.Groups[2].Value
   }
+
+  # 2) Fallback to <main>, else <body>
+  $m = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
+  if ($m.Success) { $raw = $m.Groups[1].Value } else {
+    $b = [regex]::Match($raw, '(?is)<body\b[^>]*>(.*?)</body>')
+    if ($b.Success) { $raw = $b.Groups[1].Value }
+  }
+
+  # 3) Strip SSIs and any existing header/nav/footer wrappers
   $raw = [regex]::Replace($raw, '(?is)<!--#include\s+virtual="partials/.*?-->', '')
   $raw = [regex]::Replace($raw, '(?is)<header\b[^>]*>.*?</header>', '')
   $raw = [regex]::Replace($raw, '(?is)<nav\b[^>]*>.*?</nav>', '')
   $raw = [regex]::Replace($raw, '(?is)<footer\b[^>]*>.*?</footer>', '')
-  $m = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
-  if ($m.Success) { $raw = $m.Groups[1].Value }
+  # If another <main> wrapper remains, drop it
   $raw = [regex]::Replace($raw, '(?is)</?main\b[^>]*>', '')
+
   return $raw
 }
 
