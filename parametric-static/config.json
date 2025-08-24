@@ -1,6 +1,6 @@
 ﻿{
     "site":  {
-                 "name":  "Ace Ultra Premium",
+                 "name":  "-Brand",
                  "url":  "https://maestro-uchiha.github.io/ace-ultra-premium-site/",
                  "description":  "Premium Ace Ultra Premium | quality, reliability, trust."
              },
@@ -8,6 +8,6 @@
                    "name":  "Ace Ultra Premium Team",
                    "email":  "sales@acecartstore.com"
                },
-    "brand":  "Ace Ultra Premium",
-    "moneySite":  "https://acecartstore.com"
+    "brand":  "-Brand",
+    "moneySite":  "https://Ace Ultra Premium"
 }

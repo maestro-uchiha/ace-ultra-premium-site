@@ -33,5 +33,12 @@
       <pubDate>Sat, 23 Aug 2025 19:04:51 GMT</pubDate>
       <description>My first new post with post wizard</description>
     </item>
+    <item>
+      <title>Hello ASD</title>
+      <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/hello-asd.html</link>
+      <guid>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/hello-asd.html</guid>
+      <pubDate>Sun, 24 Aug 2025 11:01:43 GMT</pubDate>
+      <description>First post via script</description>
+    </item>
   </channel>
 </rss>
