@@ -1,0 +1,65 @@
+﻿/* Amaterasu Static Deploy – base theme */
+:root {
+  --bg: #0b0c10;
+  --panel: #111319;
+  --text: #e8edf3;
+  --muted: #a8b2c1;
+  --brand: #7c5cff;
+  --brand-2: #22d3ee;
+  --line: #1e2230;
+  --link: #8ab4ff;
+  --shadow: 0 10px 30px rgba(0,0,0,.25);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+img { max-width: 100%; height: auto; display: block; }
+
+.asd-container { width: min(1100px, 92vw); margin: 0 auto; }
+
+/* Header */
+.asd-site-header {
+  position: sticky; top: 0; z-index: 10;
+  background: linear-gradient(180deg, rgba(17,19,25,.9), rgba(17,19,25,.65));
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--line);
+}
+.asd-site-header .asd-container { display: flex; align-items: center; gap: 20px; padding: 16px 0; }
+.asd-brand { font-weight: 700; letter-spacing: .4px; font-size: 18px; color: var(--text); text-decoration: none; }
+.asd-brand:hover { color: var(--brand-2); }
+.asd-nav { margin-left: auto; display: flex; gap: 16px; }
+.asd-nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 10px; }
+.asd-nav a:hover { color: var(--text); background: rgba(124, 92, 255, .12); }
+
+/* Main content */
+.asd-main { padding: 28px 0 60px; }
+.asd-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: var(--shadow);
+}
+.asd-prose {
+  line-height: 1.7;
+}
+.asd-prose h1, .asd-prose h2, .asd-prose h3 { line-height: 1.25; margin: 1.2em 0 .5em; }
+.asd-prose h1 { font-size: clamp(28px, 4vw, 40px); }
+.asd-prose h2 { font-size: clamp(22px, 3vw, 28px); }
+.asd-prose h3 { font-size: clamp(18px, 2.2vw, 22px); }
+.asd-prose p { color: var(--text); margin: 1em 0; }
+.asd-prose em { color: var(--muted); }
+.asd-prose a { color: var(--link); text-decoration: none; }
+.asd-prose a:hover { text-decoration: underline; }
+.asd-prose code { background: #0f1220; border: 1px solid #20253a; padding: 2px 6px; border-radius: 6px; }
+.asd-prose pre { background: #0f1220; border: 1px solid #20253a; padding: 14px; border-radius: 10px; overflow: auto; }
+
+/* Footer */
+.asd-site-footer {
+  border-top: 1px solid var(--line);
+  background: #0c0f16;
+  color: var(--muted);
+  padding: 28px 0;
+}
+.asd-site-footer a { color: var(--muted); text-decoration: none; }
+.asd-site-footer a:hover { color: var(--text); }
