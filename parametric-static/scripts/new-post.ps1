@@ -1,8 +1,9 @@
-<# 
+<#
   new-post.ps1
   Create a new blog post with ASD markers and update feed.xml.
   - PowerShell 5.1 compatible
   - Reads config.json via _lib.ps1 (single source of truth)
+  - Prompts for Author with default from config.json
 #>
 
 [CmdletBinding()]
@@ -10,35 +11,54 @@ param(
   [Parameter(Mandatory=$true)] [string]$Title,
   [Parameter(Mandatory=$true)] [string]$Slug,
   [string]$Description = "",
-  [datetime]$Date = (Get-Date)
+  [datetime]$Date = (Get-Date),
+  [string]$Author # optional; if omitted, we'll prompt with default
 )
 
+# --- load lib/config ---
 $ScriptsDir = Split-Path -Parent $PSCommandPath
 . (Join-Path $ScriptsDir "_lib.ps1")
 
 $S   = Get-ASDPaths
 $cfg = Get-ASDConfig -Root $S.Root
 
-# -------- Resolve author name robustly (flat or nested), with safe fallback --------
-$authorName = "ASD"
-if ($cfg -ne $null) {
-  if ($cfg.PSObject.Properties.Name -contains 'AuthorName' -and -not [string]::IsNullOrWhiteSpace($cfg.AuthorName)) {
-    $authorName = $cfg.AuthorName
-  } elseif ($cfg.PSObject.Properties.Name -contains 'author' -and $cfg.author -ne $null) {
-    if ($cfg.author.PSObject.Properties.Name -contains 'name' -and -not [string]::IsNullOrWhiteSpace($cfg.author.name)) {
-      $authorName = $cfg.author.name
-    } elseif ($cfg.author.PSObject.Properties.Name -contains 'Name' -and -not [string]::IsNullOrWhiteSpace($cfg.author.Name)) {
-      $authorName = $cfg.author.Name
+function Get-DefaultAuthor([object]$cfgObj) {
+  $fallback = "ASD"
+  if ($cfgObj -eq $null) { return $fallback }
+  if ($cfgObj.PSObject.Properties.Name -contains 'AuthorName' -and -not [string]::IsNullOrWhiteSpace($cfgObj.AuthorName)) {
+    return $cfgObj.AuthorName
+  }
+  if ($cfgObj.PSObject.Properties.Name -contains 'author' -and $cfgObj.author -ne $null) {
+    if ($cfgObj.author.PSObject.Properties.Name -contains 'name' -and -not [string]::IsNullOrWhiteSpace($cfgObj.author.name)) {
+      return $cfgObj.author.name
+    }
+    if ($cfgObj.author.PSObject.Properties.Name -contains 'Name' -and -not [string]::IsNullOrWhiteSpace($cfgObj.author.Name)) {
+      return $cfgObj.author.Name
     }
   }
+  return $fallback
 }
 
-# -------- Sanitize slug --------
+# -------- sanitize slug --------
 $slug = $Slug
 if ($slug) { $slug = $slug.Trim().ToLower() }
 $slug = $slug -replace '\s+','-'
 $slug = $slug -replace '[^a-z0-9\-]',''
 if ([string]::IsNullOrWhiteSpace($slug)) { throw "Slug became empty after sanitization." }
+
+# -------- author name (prompt with default) --------
+$defaultAuthor = Get-DefaultAuthor $cfg
+if ([string]::IsNullOrWhiteSpace($Author)) {
+  # interactive prompt with default (Enter to accept)
+  try {
+    $ans = Read-Host ("Author name [{0}]" -f $defaultAuthor)
+    if ([string]::IsNullOrWhiteSpace($ans)) { $Author = $defaultAuthor } else { $Author = $ans }
+  } catch {
+    # non-interactive fallback
+    $Author = $defaultAuthor
+  }
+}
+$authorName = $Author
 
 # -------- Paths / ensure blog dir --------
 $blogDir = $S.Blog
@@ -53,6 +73,7 @@ $dateIso   = $Date.ToString('yyyy-MM-dd')
 
 # Escape quotes for the description attribute
 $descAttr = $descText -replace '"','&quot;'
+$authorAttr = $authorName -replace '"','&quot;'
 
 $html = @"
 <!DOCTYPE html>
@@ -68,7 +89,7 @@ $html = @"
   <meta name="description" content="$descAttr">
   <!-- ASD:DESC:END -->
 
-  <meta name="author" content="$authorName">
+  <meta name="author" content="$authorAttr">
   <meta name="date" content="$dateIso">
 </head>
 <body>
