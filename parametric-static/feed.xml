@@ -1,51 +1,43 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>{{BRAND}} Blog</title>
-    <link>https://YOUR-DOMAIN.example/blog/</link>
-    <description>Updates and articles from {{BRAND}}.</description>
-    <language>en-us</language>
+    <title>Ace Ultra Premium</title>
+    <link>/https:/maestro-uchiha.github.io/ace-ultra-premium-site/</link>
+    <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     <item>
-      <title>Why {{BRAND}}?</title>
-      <link>https://YOUR-DOMAIN.example/blog/first-post.html</link>
-      <guid>https://YOUR-DOMAIN.example/blog/first-post.html</guid>
-      <pubDate>Tue, 19 Aug 2025 10:00:00 GMT</pubDate>
-      <description>A brief introduction to the brand and quality standards.</description>
+      <title>This is another new post</title>
+      <link>/https:/maestro-uchiha.github.io/ace-ultra-premium-site/blog/this-is-another-new-post.html</link>
+      <pubDate>Sun, 24 Aug 2025 18:52:37 GMT</pubDate>
     </item>
     <item>
-      <title>First Impressions of Ace Ultra Premium</title>
-      <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/first-impressions-of-ace-ultra-premium.html</link>
-      <guid>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/first-impressions-of-ace-ultra-premium.html</guid>
-      <pubDate>Fri, 22 Aug 2025 18:51:57 GMT</pubDate>
-      <description>Hands-on notes and quick verdict.</description>
+      <title>Test Title | Ace Ultra Premium</title>
+      <link>/https:/maestro-uchiha.github.io/ace-ultra-premium-site/blog/test-title.html</link>
+      <pubDate>Sun, 24 Aug 2025 18:48:59 GMT</pubDate>
     </item>
     <item>
-      <title>Test Title</title>
-      <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/test-title.html</link>
-      <guid>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/test-title.html</guid>
-      <pubDate>Fri, 22 Aug 2025 19:24:01 GMT</pubDate>
-      <description>Short description for this article.</description>
+      <title>old-slug | Ace Ultra Premium</title>
+      <link>/https:/maestro-uchiha.github.io/ace-ultra-premium-site/blog/old-slug.html</link>
+      <pubDate>Sun, 24 Aug 2025 18:48:59 GMT</pubDate>
     </item>
     <item>
-      <title>This is a new post</title>
-      <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/this-is-a-new-post.html</link>
-      <guid>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/this-is-a-new-post.html</guid>
-      <pubDate>Sat, 23 Aug 2025 19:04:51 GMT</pubDate>
-      <description>My first new post with post wizard</description>
+      <title>Hello ASD | Ace Ultra Premium</title>
+      <link>/https:/maestro-uchiha.github.io/ace-ultra-premium-site/blog/hello-asd.html</link>
+      <pubDate>Sun, 24 Aug 2025 18:48:59 GMT</pubDate>
     </item>
     <item>
-      <title>Hello ASD</title>
-      <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/hello-asd.html</link>
-      <guid>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/hello-asd.html</guid>
-      <pubDate>Sun, 24 Aug 2025 11:01:43 GMT</pubDate>
-      <description>First post via script</description>
+      <title>First Impressions of Ace Ultra Premium | Ace Ultra Premium</title>
+      <link>/https:/maestro-uchiha.github.io/ace-ultra-premium-site/blog/first-impressions-of-ace-ultra-premium.html</link>
+      <pubDate>Sun, 24 Aug 2025 18:48:59 GMT</pubDate>
     </item>
     <item>
-      <title>Hello ASD</title>
-      <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/hello-asd.html</link>
-      <guid>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/hello-asd.html</guid>
-      <pubDate>Sun, 24 Aug 2025 13:50:21 GMT</pubDate>
-      <description>Short description for this article.</description>
+      <title>Ace Ultra Premium | First Impressions | Ace Ultra Premium</title>
+      <link>/https:/maestro-uchiha.github.io/ace-ultra-premium-site/blog/ace-first-impressions.html</link>
+      <pubDate>Sun, 24 Aug 2025 18:48:59 GMT</pubDate>
     </item>
   </channel>
 </rss>
+
+
+<updated>2025-08-24T19:39:32.0660663+01:00</updated>
+
+

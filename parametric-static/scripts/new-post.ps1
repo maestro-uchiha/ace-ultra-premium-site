@@ -1,127 +1,118 @@
-# ============================================
-#  ASD new-post.ps1
-#  Creates blog/<slug>.html and regenerates feed.xml
-#  Uses _lib.ps1 (config.json as the single source of truth)
-#  PS 5.1 compatible; ASCII only
-# ============================================
+<# 
+  new-post.ps1
+  Create a new blog post with ASD markers and update feed.xml.
+  - PowerShell 5.1 compatible
+  - Reads config.json via _lib.ps1 (single source of truth)
+#>
 
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory=$true)][string]$Title,
-  [Parameter(Mandatory=$true)][string]$Slug,
+  [Parameter(Mandatory=$true)] [string]$Title,
+  [Parameter(Mandatory=$true)] [string]$Slug,
   [string]$Description = "",
-  [datetime]$Date = (Get-Date)   # <-- for test-wizard compatibility
+  [datetime]$Date = (Get-Date)
 )
 
-# Load library
-$here = Split-Path -Parent $PSCommandPath
-. (Join-Path $here "_lib.ps1")
+$ScriptsDir = Split-Path -Parent $PSCommandPath
+. (Join-Path $ScriptsDir "_lib.ps1")
 
-Write-Host "[Amaterasu Static Deploy] Version ASD 1.0.0"
-Write-Host "[ASD] New post workflow starting..."
+$S   = Get-ASDPaths
+$cfg = Get-ASDConfig -Root $S.Root
 
-$paths = Get-ASDPaths
-$cfg   = Get-ASDConfig
-
-if (-not (Test-Path $paths.Blog))   { New-Item -ItemType Directory -Force -Path $paths.Blog   | Out-Null }
-if (-not (Test-Path $paths.Drafts)) { New-Item -ItemType Directory -Force -Path $paths.Drafts | Out-Null }
-
-# Target file
-$postPath = Join-Path $paths.Blog ($Slug + ".html")
-if (Test-Path $postPath) {
-  Write-Error "Post already exists: $postPath"
-  exit 1
+# -------- Resolve author name robustly (flat or nested), with safe fallback --------
+$authorName = "ASD"
+if ($cfg -ne $null) {
+  if ($cfg.PSObject.Properties.Name -contains 'AuthorName' -and -not [string]::IsNullOrWhiteSpace($cfg.AuthorName)) {
+    $authorName = $cfg.AuthorName
+  } elseif ($cfg.PSObject.Properties.Name -contains 'author' -and $cfg.author -ne $null) {
+    if ($cfg.author.PSObject.Properties.Name -contains 'name' -and -not [string]::IsNullOrWhiteSpace($cfg.author.name)) {
+      $authorName = $cfg.author.name
+    } elseif ($cfg.author.PSObject.Properties.Name -contains 'Name' -and -not [string]::IsNullOrWhiteSpace($cfg.author.Name)) {
+      $authorName = $cfg.author.Name
+    }
+  }
 }
 
-if ([string]::IsNullOrWhiteSpace($Description)) { $Description = $cfg.Description }
+# -------- Sanitize slug --------
+$slug = $Slug
+if ($slug) { $slug = $slug.Trim().ToLower() }
+$slug = $slug -replace '\s+','-'
+$slug = $slug -replace '[^a-z0-9\-]',''
+if ([string]::IsNullOrWhiteSpace($slug)) { throw "Slug became empty after sanitization." }
 
-# Timestamps
-$iso = $Date.ToString("yyyy-MM-ddTHH:mm:sszzz")
-$day = $Date.ToString("yyyy-MM-dd")
+# -------- Paths / ensure blog dir --------
+$blogDir = $S.Blog
+New-Item -ItemType Directory -Force -Path $blogDir | Out-Null
+$outPath = Join-Path $blogDir ($slug + ".html")
+if (Test-Path $outPath) { Write-Error "Post already exists: $outPath"; exit 1 }
 
-# Basic HTML stub with ASD markers
+# -------- Compose HTML with SAFE ASD block markers --------
+$titleText = $Title.Trim()
+$descText  = if ([string]::IsNullOrWhiteSpace($Description)) { "A new post on $($cfg.SiteName)." } else { $Description }
+$dateIso   = $Date.ToString('yyyy-MM-dd')
+
+# Escape quotes for the description attribute
+$descAttr = $descText -replace '"','&quot;'
+
 $html = @"
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>$Title</title>
-  <meta name="description" content="$Description">
-  <meta name="author" content="$($cfg.AuthorName)">
+
+  <!-- ASD:TITLE:START -->
+  <title>$titleText</title>
+  <!-- ASD:TITLE:END -->
+
+  <!-- ASD:DESC:START -->
+  <meta name="description" content="$descAttr">
+  <!-- ASD:DESC:END -->
+
+  <meta name="author" content="$authorName">
+  <meta name="date" content="$dateIso">
 </head>
 <body>
-<!-- ASD:CONTENT_START -->
 <main>
-  <h1>$Title</h1>
-  <p class="meta">$day</p>
-  <div class="body">
-    <p>Write your post content here...</p>
-  </div>
+  <!-- ASD:BODY:START -->
+  <article>
+    <h1>$titleText</h1>
+    <p><em>$dateIso</em></p>
+    <p>Write your post here…</p>
+  </article>
+  <!-- ASD:BODY:END -->
 </main>
-<!-- ASD:CONTENT_END -->
 </body>
 </html>
 "@
 
-Set-Content -Encoding UTF8 $postPath $html
+Set-Content -Encoding UTF8 -Path $outPath -Value $html
+Write-Host "[ASD] Created blog\$slug.html"
 
-# Set file times so feeds/pagination sort by the provided -Date
-try {
-  (Get-Item $postPath).LastWriteTime = $Date
-  (Get-Item $postPath).CreationTime  = $Date
-} catch { }
-
-Write-Host "[ASD] Created blog\$($Slug).html"
-
-# Rebuild feed.xml from files in /blog
-function Write-ASDFeed {
-  param(
-    [Parameter(Mandatory=$true)][object]$Cfg,
-    [Parameter(Mandatory=$true)][object]$Paths
-  )
-
-  $base = Ensure-AbsoluteBaseUrl $Cfg.BaseUrl
-  $items = @()
-
-  Get-ChildItem -Path $Paths.Blog -Filter *.html -File |
-    Where-Object { $_.Name -ne "index.html" -and $_.Name -notmatch '^page-\d+\.html$' } |
-    Sort-Object LastWriteTime -Descending |
-    ForEach-Object {
-      $raw = Get-Content $_.FullName -Raw
-      $mt  = [regex]::Match($raw, '(?is)<title>(.*?)</title>')
-      $mh1 = [regex]::Match($raw, '(?is)<h1[^>]*>(.*?)</h1>')
-      $title = if ($mt.Success) { $mt.Groups[1].Value } elseif ($mh1.Success) { $mh1.Groups[1].Value } else { $_.BaseName }
-      $rel   = "blog/" + $_.Name
-      if ($_.Name -ieq "index.html") { $rel = "" }
-      $loc   = if ($base -eq "/") { "/" + $rel } else { ($base.TrimEnd('/') + "/" + $rel) }
-      $pub   = $_.LastWriteTime.ToString("r")
-      $items += [pscustomobject]@{ title=$title; link=$loc; pub=$pub }
-    }
-
-  $feedPath = Join-Path $Paths.Root "feed.xml"
-  $sb = New-Object System.Text.StringBuilder
-  [void]$sb.AppendLine('<?xml version="1.0" encoding="UTF-8"?>')
-  [void]$sb.AppendLine('<rss version="2.0">')
-  [void]$sb.AppendLine('  <channel>')
-  [void]$sb.AppendLine("    <title>$($Cfg.SiteName)</title>")
-  [void]$sb.AppendLine("    <link>$base</link>")
-  [void]$sb.AppendLine("    <description>$($Cfg.Description)</description>")
-  foreach($i in $items){
-    [void]$sb.AppendLine("    <item>")
-    [void]$sb.AppendLine("      <title>$($i.title)</title>")
-    [void]$sb.AppendLine("      <link>$($i.link)</link>")
-    [void]$sb.AppendLine("      <pubDate>$($i.pub)</pubDate>")
-    [void]$sb.AppendLine("    </item>")
+# -------- Update (or create) a simple feed.xml --------
+$feedPath = Join-Path $S.Root "feed.xml"
+if (-not (Test-Path $feedPath)) {
+  $feedInit = @"
+<?xml version="1.0" encoding="utf-8"?>
+<feed>
+  <updated>$(Get-Date -Format o)</updated>
+</feed>
+"@
+  Set-Content -Encoding UTF8 -Path $feedPath -Value $feedInit
+} else {
+  try {
+    $feed = Get-Content -Raw -ErrorAction Stop $feedPath
+  } catch {
+    $feed = ""
   }
-  [void]$sb.AppendLine('  </channel>')
-  [void]$sb.AppendLine('</rss>')
-
-  Set-Content -Encoding UTF8 $feedPath $sb.ToString()
-  Write-Host "[ASD] feed.xml updated"
+  if ($feed -match '<updated>.*?</updated>') {
+    $feed = [regex]::Replace($feed, '<updated>.*?</updated>', ('<updated>' + (Get-Date -Format o) + '</updated>'))
+  } else {
+    $feed += "`n<updated>$(Get-Date -Format o)</updated>`n"
+  }
+  Set-Content -Encoding UTF8 -Path $feedPath -Value $feed
 }
-
-Write-ASDFeed -Cfg $cfg -Paths $paths
+Write-Host "[ASD] feed.xml updated"
 
 Write-Host ""
-Write-Host "[ASD] Next (manual):"
+Write-Host "[ASD] Next:"
 Write-Host "  .\parametric-static\scripts\bake.ps1"
