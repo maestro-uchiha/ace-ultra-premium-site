@@ -21,3 +21,11 @@ git push
 - Wizard end-to-end OK
 - Pagination, redirects manager, link checker
 - Bake & sitemap/robots auto-gen
+
+## [v1.1.1] – 2025-08-24
+### Changed
+- **Licensing:** Switched from MIT to **Proprietary (All rights reserved)**.
+- Docs: Updated `README.md` and repository notices to reflect proprietary licensing.
+
+### Notes
+- This change applies to new versions going forward.

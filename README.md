@@ -21,3 +21,9 @@ cd ace-ultra-premium-site\parametric-static
 
 # 3) Bake the site (wrap pages + sitemap + robots sitemap URL)
 .\scripts\bake.ps1 -Brand "Ace Ultra Premium" -Money "https://acecartstore.com"
+
+## License
+
+**Proprietary – All rights reserved.**  
+No permission is granted to use, copy, modify, or redistribute this repository or any part of it without
+explicit written permission from the copyright holder.
