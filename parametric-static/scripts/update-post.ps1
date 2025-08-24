@@ -4,9 +4,9 @@
     -Slug (required)
     -Title (optional)
     -Description (optional)
-    -BodyHtml (optional)   -> replaces the content between ASD body markers
-    -Author  (optional)    -> upserts <meta name="author"> (prompts if not supplied)
-  Ensures ASD markers exist (body only). PS 5.1 safe.
+    -BodyHtml (optional)   -> replaces the content between ASD markers
+    -Author  (optional)    -> upserts <meta name="author">
+  Ensures ASD markers exist. PS 5.1 safe. Uses config.json for defaults when needed.
 #>
 
 [CmdletBinding()]
@@ -22,6 +22,8 @@ param(
 $S   = Get-ASDPaths
 $cfg = Get-ASDConfig -Root $S.Root
 
+# default author if we need to create the meta tag and no Author was passed
+$defaultAuthor = 'Maestro'
 function HtmlEscape([string]$s) {
   if ($null -eq $s) { return "" }
   $s = $s -replace '&','&amp;'
@@ -31,35 +33,12 @@ function HtmlEscape([string]$s) {
   return $s
 }
 
-# --- Resolve default author from config or "Maestro" ---
-$defaultAuthor = 'Maestro'
-if ($cfg -ne $null) {
-  if ($cfg.PSObject.Properties.Name -contains 'AuthorName' -and -not [string]::IsNullOrWhiteSpace($cfg.AuthorName)) {
-    $defaultAuthor = $cfg.AuthorName
-  } elseif ($cfg.PSObject.Properties.Name -contains 'author' -and $cfg.author -ne $null) {
-    if ($cfg.author.PSObject.Properties.Name -contains 'name' -and -not [string]::IsNullOrWhiteSpace($cfg.author.name)) {
-      $defaultAuthor = $cfg.author.name
-    } elseif ($cfg.author.PSObject.Properties.Name -contains 'Name' -and -not [string]::IsNullOrWhiteSpace($cfg.author.Name)) {
-      $defaultAuthor = $cfg.author.Name
-    }
-  }
-}
-
-# If Author not supplied, ask the user (defaulting to resolved default)
-$authorName = $defaultAuthor
-if ($PSBoundParameters.ContainsKey('Author') -and -not [string]::IsNullOrWhiteSpace($Author)) {
-  $authorName = $Author
-} elseif (-not $PSBoundParameters.ContainsKey('Author')) {
-  $input = Read-Host "Author name [$defaultAuthor]"
-  if (-not [string]::IsNullOrWhiteSpace($input)) { $authorName = $input }
-}
-
 $postPath = Join-Path $S.Blog ($Slug + ".html")
 if (-not (Test-Path $postPath)) { Write-Error "Post not found: $postPath"; exit 1 }
 
 $html = Get-Content $postPath -Raw
 
-# Ensure ASD markers around the main body (no head markers anywhere)
+# Ensure ASD markers exist around the main body
 $hasMarkers = [regex]::IsMatch($html, '(?is)<!--\s*ASD:CONTENT_START\s*-->.*<!--\s*ASD:CONTENT_END\s*-->')
 if (-not $hasMarkers) {
   $bodyMatch = [regex]::Match($html, '(?is)<body[^>]*>(.*?)</body>')
@@ -76,22 +55,17 @@ $inside
   }
 }
 
-# Update <title> ONLY if Title was provided
+# Update <title>
 if ($PSBoundParameters.ContainsKey('Title') -and -not [string]::IsNullOrWhiteSpace($Title)) {
-  $titleEsc = HtmlEscape($Title)
-  if ([regex]::IsMatch($html, '(?is)<title>.*?</title>')) {
-    $html = [regex]::Replace(
-      $html,
-      '(?is)(<title>)(.*?)(</title>)',
-      { param($m) $m.Groups[1].Value + $titleEsc + $m.Groups[3].Value },
-      1
-    )
-  } elseif ($html -match '(?is)</head>') {
-    $html = [regex]::Replace($html, '(?is)</head>', ("  <title>$titleEsc</title>`r`n</head>"), 1)
-  }
+  $html = [regex]::Replace(
+    $html,
+    '(?is)(<title>)(.*?)(</title>)',
+    { param($m) $m.Groups[1].Value + $Title + $m.Groups[3].Value },
+    1
+  )
 }
 
-# Upsert meta description ONLY if provided
+# Upsert meta description
 if ($PSBoundParameters.ContainsKey('Description')) {
   $descEsc = HtmlEscape($Description)
   if ([regex]::IsMatch($html, '(?is)<meta\s+name\s*=\s*"description"[^>]*>')) {
@@ -123,7 +97,6 @@ $BodyHtml
 
 # Update first <h1> in the marker block if Title provided
 if ($PSBoundParameters.ContainsKey('Title') -and -not [string]::IsNullOrWhiteSpace($Title)) {
-  $titleEscForH1 = HtmlEscape($Title)
   $html = [regex]::Replace(
     $html,
     '(?is)(<!--\s*ASD:CONTENT_START\s*-->)(.*?)(<!--\s*ASD:CONTENT_END\s*-->)',
@@ -134,11 +107,11 @@ if ($PSBoundParameters.ContainsKey('Title') -and -not [string]::IsNullOrWhiteSpa
         $seg = [regex]::Replace(
           $seg,
           '(?is)(<h1[^>]*>)(.*?)(</h1>)',
-          { param($mm) $mm.Groups[1].Value + $titleEscForH1 + $mm.Groups[3].Value },
+          { param($mm) $mm.Groups[1].Value + $Title + $mm.Groups[3].Value },
           1
         )
       } else {
-        $seg = ("<h1>" + $titleEscForH1 + "</h1>`r`n" + $seg)
+        $seg = ("<h1>" + $Title + "</h1>`r`n" + $seg)
       }
       return $m.Groups[1].Value + $seg + $m.Groups[3].Value
     },
@@ -146,17 +119,34 @@ if ($PSBoundParameters.ContainsKey('Title') -and -not [string]::IsNullOrWhiteSpa
   )
 }
 
-# Always upsert meta author to the resolved authorName (from arg/prompt/default)
-$authorEsc = HtmlEscape($authorName)
-if ([regex]::IsMatch($html, '(?is)<meta\s+name\s*=\s*"author"[^>]*>')) {
-  $html = [regex]::Replace(
-    $html,
-    '(?is)(<meta\s+name\s*=\s*"author"\s+content\s*=\s*")(.*?)(")',
-    { param($m) $m.Groups[1].Value + $authorEsc + $m.Groups[3].Value },
-    1
-  )
-} elseif ($html -match '(?is)</head>') {
-  $html = [regex]::Replace($html, '(?is)</head>', ("  <meta name=""author"" content=""$authorEsc"">`r`n</head>"), 1)
+# Upsert meta author only if -Author was provided; otherwise leave as-is
+if ($PSBoundParameters.ContainsKey('Author')) {
+  $authorToUse = if (-not [string]::IsNullOrWhiteSpace($Author)) { $Author } else {
+    # if Author was provided but blank, still fall back
+    if ($cfg -ne $null) {
+      if ($cfg.PSObject.Properties.Name -contains 'AuthorName' -and -not [string]::IsNullOrWhiteSpace($cfg.AuthorName)) {
+        $cfg.AuthorName
+      } elseif ($cfg.PSObject.Properties.Name -contains 'author' -and $cfg.author -ne $null) {
+        if ($cfg.author.PSObject.Properties.Name -contains 'name' -and -not [string]::IsNullOrWhiteSpace($cfg.author.name)) {
+          $cfg.author.name
+        } elseif ($cfg.author.PSObject.Properties.Name -contains 'Name' -and -not [string]::IsNullOrWhiteSpace($cfg.author.Name)) {
+          $cfg.author.Name
+        } else { $defaultAuthor }
+      } else { $defaultAuthor }
+    } else { $defaultAuthor }
+  }
+  $authorEsc = HtmlEscape($authorToUse)
+
+  if ([regex]::IsMatch($html, '(?is)<meta\s+name\s*=\s*"author"[^>]*>')) {
+    $html = [regex]::Replace(
+      $html,
+      '(?is)(<meta\s+name\s*=\s*"author"\s+content\s*=\s*")(.*?)(")',
+      { param($m) $m.Groups[1].Value + $authorEsc + $m.Groups[3].Value },
+      1
+    )
+  } elseif ($html -match '(?is)</head>') {
+    $html = [regex]::Replace($html, '(?is)</head>', ("  <meta name=""author"" content=""$authorEsc"">`r`n</head>"), 1)
+  }
 }
 
 Set-Content -Encoding UTF8 $postPath $html
