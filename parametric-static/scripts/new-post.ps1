@@ -1,138 +1,127 @@
+# ============================================
+#  ASD new-post.ps1
+#  Creates blog/<slug>.html and regenerates feed.xml
+#  Uses _lib.ps1 (config.json as the single source of truth)
+#  PS 5.1 compatible; ASCII only
+# ============================================
+
+[CmdletBinding()]
 param(
   [Parameter(Mandatory=$true)][string]$Title,
-  [string]$Slug,
-  [string]$Description = "Short description for this article.",
-  [string]$BodyPath,
-  [string]$Date = (Get-Date -Format "yyyy-MM-dd")
+  [Parameter(Mandatory=$true)][string]$Slug,
+  [string]$Description = "",
+  [datetime]$Date = (Get-Date)   # <-- for test-wizard compatibility
 )
 
-$Root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
-Set-Location $Root
+# Load library
+$here = Split-Path -Parent $PSCommandPath
+. (Join-Path $here "_lib.ps1")
 
-$Version = "(unknown)"
-if (Test-Path "$Root\VERSION") { try { $Version = (Get-Content "$Root\VERSION" -Raw).Trim() } catch {} }
-Write-Host "[Amaterasu Static Deploy] Version $Version"
-Write-Host "[ASD] New post workflow starting…`n"
+Write-Host "[Amaterasu Static Deploy] Version ASD 1.0.0"
+Write-Host "[ASD] New post workflow starting..."
 
-# Canonical base from config.site.url (fallback empty)
-$Domain = "https://YOUR-DOMAIN.example/"
-$Money  = ""
-if (Test-Path ".\config.json") {
-  try {
-    $cfg = Get-Content .\config.json -Raw | ConvertFrom-Json
-    if ($cfg.site.url) { $Domain = ($cfg.site.url.TrimEnd('/') + '/') }
-    if ($cfg.moneySite) { $Money = $cfg.moneySite }
-  } catch {}
+$paths = Get-ASDPaths
+$cfg   = Get-ASDConfig
+
+if (-not (Test-Path $paths.Blog))   { New-Item -ItemType Directory -Force -Path $paths.Blog   | Out-Null }
+if (-not (Test-Path $paths.Drafts)) { New-Item -ItemType Directory -Force -Path $paths.Drafts | Out-Null }
+
+# Target file
+$postPath = Join-Path $paths.Blog ($Slug + ".html")
+if (Test-Path $postPath) {
+  Write-Error "Post already exists: $postPath"
+  exit 1
 }
 
-# Slug
-if (-not $Slug -or $Slug.Trim() -eq "") {
-  $Slug = ($Title.ToLower() -replace '[^a-z0-9]+','-').Trim('-')
-}
+if ([string]::IsNullOrWhiteSpace($Description)) { $Description = $cfg.Description }
 
-$postRel = "blog\$Slug.html"
-$postAbs = Join-Path $Root $postRel
+# Timestamps
+$iso = $Date.ToString("yyyy-MM-ddTHH:mm:sszzz")
+$day = $Date.ToString("yyyy-MM-dd")
 
-# Body (supports .md or .html)
-$bodyHtml = "<p>Write your content here. Replace this paragraph with your article body.</p>"
-if ($BodyPath -and (Test-Path $BodyPath)) {
-  $ext = [IO.Path]::GetExtension($BodyPath).ToLower()
-  if ($ext -eq ".html") {
-    $bodyHtml = Get-Content $BodyPath -Raw
-  } elseif ($ext -eq ".md") {
-    $md = Get-Content $BodyPath -Raw
-    $md = ($md -split "`r?`n") -join "`n"
-    $md = $md -replace '^# (.+)$', '<h1>$1</h1>'
-    $md = $md -replace '^## (.+)$', '<h2>$1</h2>'
-    $md = $md -replace '^\* (.+)$', '<li>$1</li>'
-    $blocks = $md -split "`n`n"
-    $htmlBlocks = foreach($b in $blocks){
-      if ($b -match '^\s*<h\d|^\s*<li') { $b } else { "<p>$($b -replace "`n","<br>")</p>" }
-    }
-    $bodyHtml = ($htmlBlocks -join "`n").Trim()
-  }
-}
-
-# JSON-LD (kept inside content so bake preserves it)
-$postUrl = ($Domain.TrimEnd('/') + "/blog/$Slug.html")
-$postJsonLd = @"
-<script type="application/ld+json">
-{
-  "@context":"https://schema.org",
-  "@type":"BlogPosting",
-  "headline":"$Title",
-  "datePublished":"$Date",
-  "dateModified":"$Date",
-  "author":{"@type":"Organization","name":"{{BRAND}}"},
-  "publisher":{"@type":"Organization","name":"{{BRAND}}"},
-  "mainEntityOfPage":{"@type":"WebPage","@id":"$postUrl"},
-  "image":"$($Domain.TrimEnd('/'))/assets/img/og.jpg",
-  "description":"$Description"
-}
-</script>
-<script type="application/ld+json">
-{
-  "@context":"https://schema.org",
-  "@type":"BreadcrumbList",
-  "itemListElement":[
-    {"@type":"ListItem","position":1,"name":"Home","item":"$($Domain)"},
-    {"@type":"ListItem","position":2,"name":"Blog","item":"$($Domain)blog/"},
-    {"@type":"ListItem","position":3,"name":"$Title","item":"$postUrl"}
-  ]
-}
-</script>
-"@
-
-# CONTENT-ONLY with ASD markers (bake wraps via layout.html)
-$content = @"
+# Basic HTML stub with ASD markers
+$html = @"
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>$Title</title>
+  <meta name="description" content="$Description">
+  <meta name="author" content="$($cfg.AuthorName)">
+</head>
+<body>
 <!-- ASD:CONTENT_START -->
-<h1>$Title</h1>
-<p class="meta">$Date &middot; <a href="{{MONEY}}">{{MONEY}}</a></p>
-
-<article class="prose">
-$bodyHtml
-</article>
-
-$postJsonLd
+<main>
+  <h1>$Title</h1>
+  <p class="meta">$day</p>
+  <div class="body">
+    <p>Write your post content here...</p>
+  </div>
+</main>
 <!-- ASD:CONTENT_END -->
+</body>
+</html>
 "@
 
-$content | Set-Content -Encoding UTF8 $postAbs
-Write-Host "[ASD] Created $postRel"
+Set-Content -Encoding UTF8 $postPath $html
 
-# Update feed.xml (optional; sitemap is auto-generated by bake)
-$feedPath = Join-Path $Root "feed.xml"
-if (Test-Path $feedPath) {
-  try {
-    [xml]$rss = Get-Content $feedPath
-    $chan = $rss.rss.channel
-    if (-not $chan) {
-      $rss.LoadXml('<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Blog</title><link>'+$Domain+'/blog/</link><description>Feed</description></channel></rss>')
-      $chan = $rss.rss.channel
+# Set file times so feeds/pagination sort by the provided -Date
+try {
+  (Get-Item $postPath).LastWriteTime = $Date
+  (Get-Item $postPath).CreationTime  = $Date
+} catch { }
+
+Write-Host "[ASD] Created blog\$($Slug).html"
+
+# Rebuild feed.xml from files in /blog
+function Write-ASDFeed {
+  param(
+    [Parameter(Mandatory=$true)][object]$Cfg,
+    [Parameter(Mandatory=$true)][object]$Paths
+  )
+
+  $base = Ensure-AbsoluteBaseUrl $Cfg.BaseUrl
+  $items = @()
+
+  Get-ChildItem -Path $Paths.Blog -Filter *.html -File |
+    Where-Object { $_.Name -ne "index.html" -and $_.Name -notmatch '^page-\d+\.html$' } |
+    Sort-Object LastWriteTime -Descending |
+    ForEach-Object {
+      $raw = Get-Content $_.FullName -Raw
+      $mt  = [regex]::Match($raw, '(?is)<title>(.*?)</title>')
+      $mh1 = [regex]::Match($raw, '(?is)<h1[^>]*>(.*?)</h1>')
+      $title = if ($mt.Success) { $mt.Groups[1].Value } elseif ($mh1.Success) { $mh1.Groups[1].Value } else { $_.BaseName }
+      $rel   = "blog/" + $_.Name
+      if ($_.Name -ieq "index.html") { $rel = "" }
+      $loc   = if ($base -eq "/") { "/" + $rel } else { ($base.TrimEnd('/') + "/" + $rel) }
+      $pub   = $_.LastWriteTime.ToString("r")
+      $items += [pscustomobject]@{ title=$title; link=$loc; pub=$pub }
     }
-    $item = $rss.CreateElement("item")
-    $t = $rss.CreateElement("title"); $t.InnerText = $Title; $null = $item.AppendChild($t)
-    $l = $rss.CreateElement("link");  $l.InnerText = "$postUrl"; $null = $item.AppendChild($l)
-    $g = $rss.CreateElement("guid");  $g.InnerText = "$postUrl"; $null = $item.AppendChild($g)
-    $d = $rss.CreateElement("pubDate"); $d.InnerText = [DateTime]::UtcNow.ToString("R"); $null = $item.AppendChild($d)
-    $desc = $rss.CreateElement("description"); $desc.InnerText = $Description; $null = $item.AppendChild($desc)
-    $null = $chan.AppendChild($item)
-    $rss.Save($feedPath)
-    Write-Host "[ASD] feed.xml updated"
-  } catch { Write-Warning "[ASD] Could not update feed.xml: $_" }
-} else {
-  Write-Warning "[ASD] feed.xml not found; skipping"
+
+  $feedPath = Join-Path $Paths.Root "feed.xml"
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.AppendLine('<?xml version="1.0" encoding="UTF-8"?>')
+  [void]$sb.AppendLine('<rss version="2.0">')
+  [void]$sb.AppendLine('  <channel>')
+  [void]$sb.AppendLine("    <title>$($Cfg.SiteName)</title>")
+  [void]$sb.AppendLine("    <link>$base</link>")
+  [void]$sb.AppendLine("    <description>$($Cfg.Description)</description>")
+  foreach($i in $items){
+    [void]$sb.AppendLine("    <item>")
+    [void]$sb.AppendLine("      <title>$($i.title)</title>")
+    [void]$sb.AppendLine("      <link>$($i.link)</link>")
+    [void]$sb.AppendLine("      <pubDate>$($i.pub)</pubDate>")
+    [void]$sb.AppendLine("    </item>")
+  }
+  [void]$sb.AppendLine('  </channel>')
+  [void]$sb.AppendLine('</rss>')
+
+  Set-Content -Encoding UTF8 $feedPath $sb.ToString()
+  Write-Host "[ASD] feed.xml updated"
 }
 
-# --- Friendly manual-next-step hint (does not execute bake)
-$brandHint = "Your Brand"
-$moneyHint = "https://your-domain.com"
-try {
-  if ($cfg) {
-    if ($cfg.site -and $cfg.site.name) { $brandHint = $cfg.site.name }
-    elseif ($cfg.brand) { $brandHint = $cfg.brand }
-    if ($cfg.moneySite) { $moneyHint = $cfg.moneySite }
-  }
-} catch {}
-Write-Host "`n[ASD] Next (manual):"
-Write-Host ("  .\parametric-static\scripts\bake.ps1 -Brand ""{0}"" -Money ""{1}""" -f $brandHint, $moneyHint)
+Write-ASDFeed -Cfg $cfg -Paths $paths
+
+Write-Host ""
+Write-Host "[ASD] Next (manual):"
+Write-Host "  .\parametric-static\scripts\bake.ps1"

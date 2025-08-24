@@ -40,5 +40,12 @@
       <pubDate>Sun, 24 Aug 2025 11:01:43 GMT</pubDate>
       <description>First post via script</description>
     </item>
+    <item>
+      <title>Hello ASD</title>
+      <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/hello-asd.html</link>
+      <guid>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/hello-asd.html</guid>
+      <pubDate>Sun, 24 Aug 2025 13:50:21 GMT</pubDate>
+      <description>Short description for this article.</description>
+    </item>
   </channel>
 </rss>

@@ -2,6 +2,16 @@ param(
   [Parameter(Mandatory=$true)][string]$Slug
 )
 
+# Load config
+$__here = Split-Path -Parent $PSCommandPath
+. (Join-Path $__here "_lib.ps1")
+$__cfg   = Get-ASDConfig
+$Brand   = $__cfg.SiteName
+$Money   = $__cfg.StoreUrl
+$Desc    = $__cfg.Description
+$Base    = $__cfg.BaseUrl
+$__paths = Get-ASDPaths
+
 $Root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $src  = Join-Path $Root ("blog\" + $Slug + ".html")
 if (-not (Test-Path $src)) { Write-Error "Post not found: $src"; exit 1 }

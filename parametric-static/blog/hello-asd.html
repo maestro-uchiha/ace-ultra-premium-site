@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <title>Hello ASD | -Brand</title>
-  <meta name="description" content="Premium Ace Ultra Premium | quality, reliability, trust.">
+  <title>Hello ASD | {{BRAND}}</title>
+  <meta name="description" content="{{DESCRIPTION}}">
   <link rel="canonical" href="../index.html">
 
   <!-- Open Graph -->
-  <meta property="og:title" content="Hello ASD | -Brand">
-  <meta property="og:description" content="Premium Ace Ultra Premium | quality, reliability, trust.">
+  <meta property="og:title" content="Hello ASD | {{BRAND}}">
+  <meta property="og:description" content="{{DESCRIPTION}}">
   <meta property="og:image" content="../assets/img/og.jpg">
   <meta property="og:type" content="website">
 
@@ -20,11 +20,11 @@
   <link rel="icon" href="../assets/favicon.ico">
   <link rel="stylesheet" href="../assets/css/style.css">
 
-  <link rel="alternate" type="application/rss+xml" title="-Brand Blog" href="../feed.xml">
+  <link rel="alternate" type="application/rss+xml" title="{{BRAND}} Blog" href="../feed.xml">
 </head>
 <body>
   <header>
-    <h1><a href="../index.html">-Brand</a></h1>
+    <h1><a href="../index.html">{{BRAND}}</a></h1>
 
     <!-- Mobile toggle (CSS bars, ASCII-safe) -->
     <button id="navToggle" class="nav-toggle"
@@ -46,38 +46,14 @@
     </nav>
   </header>
 
-  <main><h1>Hello ASD</h1>
-<p class="meta">2025-08-24 &middot; <a href="https://Ace Ultra Premium">https://Ace Ultra Premium</a></p>
-
-<article class="prose">
+  <main>
+    
+    <h1>Hello ASD</h1>
+    <article>
 <p>Write your content here. Replace this paragraph with your article body.</p>
-</article>
-
-<script type="application/ld+json">
-{
-  "@context":"https://schema.org",
-  "@type":"BlogPosting",
-  "headline":"Hello ASD",
-  "datePublished":"2025-08-24",
-  "dateModified":"2025-08-24",
-  "author":{"@type":"Organization","name":"-Brand"},
-  "publisher":{"@type":"Organization","name":"-Brand"},
-  "mainEntityOfPage":{"@type":"WebPage","@id":"https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/hello-asd.html"},
-  "image":"https://maestro-uchiha.github.io/ace-ultra-premium-site/assets/img/og.jpg",
-  "description":"First post via script"
-}
-</script>
-<script type="application/ld+json">
-{
-  "@context":"https://schema.org",
-  "@type":"BreadcrumbList",
-  "itemListElement":[
-    {"@type":"ListItem","position":1,"name":"Home","item":"https://maestro-uchiha.github.io/ace-ultra-premium-site/"},
-    {"@type":"ListItem","position":2,"name":"Blog","item":"https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/"},
-    {"@type":"ListItem","position":3,"name":"Hello ASD","item":"https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/hello-asd.html"}
-  ]
-}
-</script></main>
+    </article>
+  
+  </main>
 
 <footer>
   <p>
@@ -89,7 +65,7 @@
     <a href="../legal/terms.html">Terms</a> |
     <a href="../sitemap.html">Sitemap</a>
   </p>
-  <p>&copy; 2025 -Brand. All rights reserved.</p>
+  <p>&copy; 2025 {{BRAND}}. All rights reserved.</p>
 </footer>
 
   <script>

@@ -1,80 +1,60 @@
 param(
   [Parameter(Mandatory=$true)][string]$OldSlug,
   [Parameter(Mandatory=$true)][string]$NewSlug,
-  [string]$Title,
-  [switch]$LeaveRedirect,
-  [switch]$Force
+  [switch]$LeaveRedirect
 )
 
-$Root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
-$blog = Join-Path $Root "blog"
-$old  = Join-Path $blog ($OldSlug + ".html")
-$new  = Join-Path $blog ($NewSlug + ".html")
+# Load config
+$__here = Split-Path -Parent $PSCommandPath
+. (Join-Path $__here "_lib.ps1")
+$__cfg   = Get-ASDConfig
+$Brand   = $__cfg.SiteName
+$Money   = $__cfg.StoreUrl
+$Desc    = $__cfg.Description
+$Base    = $__cfg.BaseUrl
+$__paths = Get-ASDPaths
 
-if (-not (Test-Path $old)) { Write-Error "Source not found: $old"; exit 1 }
-if ((Test-Path $new) -and -not $Force) { Write-Error "Target already exists:`n$new"; exit 1 }
+. "$PSScriptRoot\_lib.ps1"
+$S   = Get-ASDPaths
+$cfg = Get-ASDConfig -Root $S.Root
 
-# Read original, compute new title if given
-$src = Get-Content $old -Raw
-if ($Title) {
-  # <title>
-  if ($src -match '(?is)<title>(.*?)</title>') {
-    $src = [regex]::Replace($src,'(?is)(<title>)(.*?)(</title>)',('$1' + [regex]::Escape($Title).Replace('\','\\') + '$3'),1)
-  } else {
-    $src = $src -replace '(?is)<head>','<head>' + "`r`n<title>" + $Title + "</title>"
-  }
-  # first <h1>
-  if ($src -match '(?is)<h1[^>]*>(.*?)</h1>') {
-    $src = [regex]::Replace($src,'(?is)(<h1[^>]*>)(.*?)(</h1>)',('$1' + [regex]::Escape($Title).Replace('\','\\') + '$3'),1)
-  }
-}
+$Base  = Ensure-AbsoluteBaseUrl $cfg.site.url
 
-# Write/overwrite target
-$src | Set-Content -Encoding UTF8 $new
-Write-Host "[ASD] Wrote blog/$NewSlug.html"
+$src = Join-Path $S.Blog ($OldSlug + ".html")
+$dst = Join-Path $S.Blog ($NewSlug + ".html")
 
-# Leave redirect stub on old file if requested, else delete
+if (-not (Test-Path $src)) { Write-Error "Source not found: $src"; exit 1 }
+if (Test-Path $dst)        { Write-Error "Target already exists: $dst"; exit 1 }
+
+# move file
+Move-Item -Force $src $dst
+Write-Host ("[ASD] Wrote blog/{0}.html" -f $NewSlug)
+
+# leave stub/redirect if requested
 if ($LeaveRedirect) {
-  # Build base url if available
-  $base = ""
-  $cfgPath = Join-Path $Root "config.json"
-  if (Test-Path $cfgPath) {
-    try { $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json; if ($cfg.site -and $cfg.site.url) { $base = [string]$cfg.site.url } } catch {}
-  }
-  if ([string]::IsNullOrWhiteSpace($base)) {
-    # fall back to repo-relative path
-    $targetHref = "/blog/$NewSlug.html"
-  } else {
-    $base = ($base.TrimEnd('/') + "/") -replace "/{2,}","/"
-    $targetHref = $base + "blog/$NewSlug.html"
-  }
-
+  $abs = if ($Base -match '^[a-z]'){ ($Base.TrimEnd('/') + '/blog/' + $NewSlug + '.html') } else { ('/blog/' + $NewSlug + '.html') }
   $stub = @"
-<!doctype html><meta charset="utf-8">
-<title>Moved</title>
-<meta http-equiv="refresh" content="0; url=$targetHref">
-<script>location.replace("$targetHref");</script>
-<p>This page has moved to <a href="$targetHref">$targetHref</a>.</p>
+<!doctype html>
+<meta http-equiv="refresh" content="0; url=$abs">
+<link rel="canonical" href="$abs">
+<title>Redirecting...</title>
+<p>Moving to <a href="$abs">$abs</a></p>
 "@
-  $stub | Set-Content -Encoding UTF8 $old
-  Write-Host "[ASD] Redirect stub left at blog/$OldSlug.html -> $targetHref"
-
-  # Also register in redirects.json
-  $redirPath = Join-Path $Root "redirects.json"
-  $list = @()
-  if (Test-Path $redirPath) {
-    try { $list = Get-Content $redirPath -Raw | ConvertFrom-Json } catch { $list = @() }
-  }
-  $entry = [pscustomobject]@{
-    from     = "/blog/$OldSlug.html"
-    to       = "/blog/$NewSlug.html"
-    code     = 301
-    disabled = $false
-  }
-  $list = @($list) + @($entry)
-  ($list | ConvertTo-Json -Depth 5) | Set-Content -Encoding UTF8 $redirPath
-  Write-Host "[ASD] redirects.json updated"
-} else {
-  Remove-Item $old -Force
-  Write-Host "[ASD] Removed blog/$OldSlug.html"
+  Set-Content -Encoding UTF8 $src $stub
+  Write-Host ("[ASD] Redirect stub left at blog/{0}.html -> {1}" -f $OldSlug, $abs)
 }
+
+# also update redirects.json (from old path to new path)
+$redirPath = Join-Path $S.Root "redirects.json"
+$items = @()
+if (Test-Path $redirPath) {
+  try { $items = (Get-Content $redirPath -Raw | ConvertFrom-Json -ErrorAction Stop) } catch { $items = @() }
+}
+if ($null -eq $items) { $items = @() }
+
+$from = "/blog/$OldSlug.html"
+$to   = "/blog/$NewSlug.html"
+$newItem = [pscustomobject]@{ from = $from; to = $to; code = 301; active = $true }
+$items = @($items) + @($newItem)
+$items | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 $redirPath
+Write-Host "[ASD] redirects.json updated"
