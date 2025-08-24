@@ -2,183 +2,146 @@ param(
   [Parameter(Mandatory=$true)][string]$Slug,
   [string]$Title,
   [string]$Description,
-  [string]$BodyPath,
-  [string]$Date,
-  [switch]$TouchFileTime
+  [Alias('BodyHtml','Body')][string]$BodyText,
+  [string]$BodyPath
 )
 
-$Root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
-Set-Location $Root
+$ErrorActionPreference = 'Stop'
 
-# --- Read config (for domain/money + hint later)
-$cfg = $null
-if (Test-Path ".\config.json") { try { $cfg = Get-Content .\config.json -Raw | ConvertFrom-Json } catch {} }
+# ==== paths ====
+$here = Split-Path -Parent $PSCommandPath
+$root = Split-Path -Parent $here
+Set-Location $root
 
-function Get-Domain {
-  if ($cfg -and $cfg.site -and $cfg.site.url) { return ($cfg.site.url.TrimEnd('/') + '/') }
-  return "https://YOUR-DOMAIN.example/"
+$postRel = "blog\$Slug.html"
+$postAbs = Join-Path $root $postRel
+if (-not (Test-Path $postAbs)) { Write-Error "Post not found: $postAbs"; exit 1 }
+
+# ==== helpers ====
+function Get-InnerContent {
+  param([string]$html)
+  $m = [regex]::Match($html,'(?is)<!--\s*ASD:CONTENT_START\s*-->(.*?)<!--\s*ASD:CONTENT_END\s*-->')
+  if ($m.Success) { return ,@($m.Groups[1].Value,$true) }
+  $mm = [regex]::Match($html,'(?is)<main\b[^>]*>(.*?)</main>')
+  if ($mm.Success) { return ,@($mm.Groups[1].Value,$false) }
+  $mb = [regex]::Match($html,'(?is)<body\b[^>]*>(.*?)</body>')
+  if ($mb.Success) {
+    $inner = $mb.Groups[1].Value
+    $inner = [regex]::Replace($inner,'(?is)<header\b[^>]*>.*?</header>','')
+    $inner = [regex]::Replace($inner,'(?is)<nav\b[^>]*>.*?</nav>','')
+    $inner = [regex]::Replace($inner,'(?is)<footer\b[^>]*>.*?</footer>','')
+    return ,@($inner,$false)
+  }
+  return ,@($html,$false)
 }
 
-function Read-BodyHtml([string]$path) {
-  if (-not $path -or -not (Test-Path $path)) { return $null }
+function Ensure-Markers {
+  param([string]$html,[string]$content)
+  if ([regex]::IsMatch($html,'(?is)<!--\s*ASD:CONTENT_START\s*-->')) { return $html }
+  $pre  = [regex]::Match($html,'(?is)^(.*?<body[^>]*>)').Groups[1].Value
+  $post = [regex]::Match($html,'(?is)(</body>.*)$').Groups[1].Value
+  if ($pre -and $post) {
+    return ($pre + "`r`n<!-- ASD:CONTENT_START -->`r`n" + $content + "`r`n<!-- ASD:CONTENT_END -->`r`n" + $post)
+  }
+  return ("<!-- ASD:CONTENT_START -->`r`n" + $content + "`r`n<!-- ASD:CONTENT_END -->")
+}
+
+function Replace-BetweenMarkers {
+  param([string]$html,[string]$content)
+  return [regex]::Replace(
+    $html,
+    '(?is)(<!--\s*ASD:CONTENT_START\s*-->).*?(<!--\s*ASD:CONTENT_END\s*-->)',
+    { param($m) $m.Groups[1].Value + "`r`n" + $content + "`r`n" + $m.Groups[2].Value },
+    1
+  )
+}
+
+function Load-BodyFromPath {
+  param([string]$path)
+  if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path $path)) { return $null }
   $ext = [IO.Path]::GetExtension($path).ToLower()
-  if ($ext -eq ".html") { return (Get-Content $path -Raw) }
-  if ($ext -eq ".md") {
-    $md = Get-Content $path -Raw
-    $md = ($md -split "`r?`n") -join "`n"
-    $md = $md -replace '^# (.+)$', '<h1>$1</h1>'
-    $md = $md -replace '^## (.+)$', '<h2>$1</h2>'
-    $md = $md -replace '^\* (.+)$', '<li>$1</li>'
-    $blocks = $md -split "`n`n"
-    $htmlBlocks = foreach($b in $blocks){
-      if ($b -match '^\s*<h\d|^\s*<li') { $b } else { "<p>$($b -replace "`n","<br>")</p>" }
-    }
-    return (($htmlBlocks -join "`n").Trim())
+  if ($ext -eq '.html') { return (Get-Content $path -Raw) }
+  if ($ext -eq '.md') {
+    $md  = Get-Content $path -Raw
+    $md  = ($md -split "`r?`n") -join "`n"
+    $md  = $md -replace '^# (.+)$','<h1>$1</h1>'
+    $md  = $md -replace '^## (.+)$','<h2>$1</h2>'
+    $md  = $md -replace '^\* (.+)$','<li>$1</li>'
+    $bl  = $md -split "`n`n"
+    $blk = foreach($b in $bl){ if ($b -match '^\s*<h\d|^\s*<li') { $b } else { "<p>$($b -replace "`n","<br>")</p>" } }
+    return ($blk -join "`n")
   }
   return $null
 }
 
-function Build-JsonLd([string]$dom, [string]$slug, [string]$ttl, [string]$dt, [string]$desc) {
-  $postUrl = ($dom.TrimEnd('/') + "/blog/$slug.html")
-@"
-<script type="application/ld+json">
-{
-  "@context":"https://schema.org",
-  "@type":"BlogPosting",
-  "headline":"$ttl",
-  "datePublished":"$dt",
-  "dateModified":"$dt",
-  "author":{"@type":"Organization","name":"{{BRAND}}"},
-  "publisher":{"@type":"Organization","name":"{{BRAND}}"},
-  "mainEntityOfPage":{"@type":"WebPage","@id":"$postUrl"},
-  "image":"$($dom.TrimEnd('/'))/assets/img/og.jpg",
-  "description":"$desc"
-}
-</script>
-<script type="application/ld+json">
-{
-  "@context":"https://schema.org",
-  "@type":"BreadcrumbList",
-  "itemListElement":[
-    {"@type":"ListItem","position":1,"name":"Home","item":"$($dom)"},
-    {"@type":"ListItem","position":2,"name":"Blog","item":"$($dom)blog/"},
-    {"@type":"ListItem","position":3,"name":"$ttl","item":"$postUrl"}
-  ]
-}
-</script>
-"@
+function Set-HeadTitle {
+  param([string]$html,[string]$newTitle)
+  if ([string]::IsNullOrWhiteSpace($newTitle)) { return $html }
+  $out = $html
+  if ($out -match '(?is)<title>.*?</title>') {
+    $out = [regex]::Replace($out,'(?is)<title>.*?</title>',"<title>$newTitle</title>",1)
+  } elseif ($out -match '(?is)<head\b[^>]*>') {
+    $out = [regex]::Replace($out,'(?is)<head\b[^>]*>',{param($m) $m.Value + "`r`n<title>$newTitle</title>"},1)
+  }
+  if ($out -match '(?is)<meta\s+property=["'']og:title["''][^>]*>') {
+    $out = [regex]::Replace($out,'(?is)<meta\s+property=["'']og:title["'']\s+content=["''][^"'']*["'']\s*/?>',"<meta property=`"og:title`" content=`"$newTitle`">",1)
+  } elseif ($out -match '(?is)</head>') {
+    $out = $out -replace '(?is)</head>',"<meta property=""og:title"" content=""$newTitle"">`r`n</head>",1
+  }
+  return $out
 }
 
-$dom = Get-Domain
-$postPath = Join-Path $Root ("blog\" + $Slug + ".html")
-if (-not (Test-Path $postPath)) { Write-Error "Post not found: $postPath"; exit 1 }
-
-$raw = Get-Content $postPath -Raw
-
-# --- Try markers first; fall back to inner <main> if markers are missing
-$mx = [regex]::Match($raw, '(?is)<!--\s*ASD:CONTENT_START\s*-->(.*?)<!--\s*ASD:CONTENT_END\s*-->')
-$hadMarkers = $mx.Success
-if ($mx.Success) {
-  $content = $mx.Groups[1].Value
-} else {
-  $m = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
-  if (-not $m.Success) { Write-Error "ASD content markers not found and no <main> section in $postPath"; exit 1 }
-  $content = $m.Groups[1].Value
+function Set-HeadDescription {
+  param([string]$html,[string]$newDesc)
+  if ([string]::IsNullOrWhiteSpace($newDesc)) { return $html }
+  $out = $html
+  if ($out -match '(?is)<meta\s+name=["'']description["''][^>]*>') {
+    $out = [regex]::Replace($out,'(?is)<meta\s+name=["'']description["'']\s+content=["''][^"'']*["'']\s*/?>',"<meta name=`"description`" content=`"$newDesc`">",1)
+  } elseif ($out -match '(?is)</head>') {
+    $out = $out -replace '(?is)</head>',"<meta name=""description"" content=""$newDesc"">`r`n</head>",1
+  }
+  if ($out -match '(?is)<meta\s+property=["'']og:description["''][^>]*>') {
+    $out = [regex]::Replace($out,'(?is)<meta\s+property=["'']og:description["'']\s+content=["''][^"'']*["'']\s*/?>',"<meta property=`"og:description`" content=`"$newDesc`">",1)
+  } elseif ($out -match '(?is)</head>') {
+    $out = $out -replace '(?is)</head>',"<meta property=""og:description"" content=""$newDesc"">`r`n</head>",1
+  }
+  return $out
 }
 
-# --- Current values/defaults
-if (-not $Title) {
-  $mH1 = [regex]::Match($content, '(?is)<h1[^>]*>(.*?)</h1>')
-  $Title = if ($mH1.Success) { $mH1.Groups[1].Value } else { $Slug }
+# ==== load file & current content ====
+$html = Get-Content $postAbs -Raw
+$pair = Get-InnerContent $html
+$currentContent = $pair[0]
+$hadMarkers     = [bool]$pair[1]
+
+# ==== decide new content ====
+$newContent = $currentContent
+if ($BodyText -and $BodyText.Trim().Length -gt 0) {
+  $newContent = $BodyText
+} elseif ($BodyPath) {
+  $tmp = Load-BodyFromPath $BodyPath
+  if ($tmp) { $newContent = $tmp }
 }
-if (-not $Date) {
-  $mMeta = [regex]::Match($content, '(?is)<p\s+class="meta">\s*([^<&]+)\s*&')
-  $Date = if ($mMeta.Success) { $mMeta.Groups[1].Value.Trim() } else { (Get-Date -Format 'yyyy-MM-dd') }
-}
-if (-not $Description) { $Description = "Updated: $Title" }
 
-# --- Optional new body
-$bodyHtml = Read-BodyHtml $BodyPath
-
-# 1) Update <h1>
-$h1rx = New-Object System.Text.RegularExpressions.Regex('<h1[^>]*>.*?</h1>', 'Singleline,IgnoreCase')
-if ($h1rx.IsMatch($content)) { $content = $h1rx.Replace($content, "<h1>$Title</h1>", 1) }
-else { $content = "<h1>$Title</h1>`n" + $content }
-
-# 2) Update meta date line
-$content = [regex]::Replace($content, '(?is)<p\s+class="meta">.*?</p>', "<p class=""meta"">$Date &middot; <a href=""{{MONEY}}"">{{MONEY}}</a></p>", 1)
-
-# 3) Update article body if provided
-if ($bodyHtml) {
-  $articleRx = New-Object System.Text.RegularExpressions.Regex('<article[^>]*class="prose"[^>]*>.*?</article>', 'Singleline,IgnoreCase')
-  if ($articleRx.IsMatch($content)) {
-    $content = $articleRx.Replace($content, "<article class=""prose"">$bodyHtml</article>", 1)
+# Update first <h1> if Title provided, else prepend a new one
+if ($Title) {
+  if ($newContent -match '(?is)<h1[^>]*>.*?</h1>') {
+    $newContent = [regex]::Replace($newContent,'(?is)<h1[^>]*>.*?</h1>',"<h1>$Title</h1>",1)
   } else {
-    $content += "`n<article class=""prose"">$bodyHtml</article>"
+    $newContent = "<h1>$Title</h1>`r`n$newContent"
   }
 }
 
-# 4) Replace all ld+json blocks with fresh ones
-$content = [regex]::Replace($content, '(?is)<script[^>]*type="application/ld\+json"[^>]*>.*?</script>', '')
-$content = $content.Trim() + "`n" + (Build-JsonLd -dom $dom -slug $Slug -ttl $Title -dt $Date -desc $Description)
-
-# --- Write back — if markers were missing, insert them now so future edits work
-if ($hadMarkers) {
-  $new = $raw.Substring(0, $mx.Groups[1].Index) + $content + $raw.Substring($mx.Groups[1].Index + $mx.Groups[1].Length)
-} else {
-  $m = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
-  $withMarkers = "<!-- ASD:CONTENT_START -->`r`n$content`r`n<!-- ASD:CONTENT_END -->"
-  $new = $raw.Substring(0, $m.Groups[1].Index) + $withMarkers + $raw.Substring($m.Groups[1].Index + $m.Groups[1].Length)
+# ==== ensure markers and replace between ====
+if (-not $hadMarkers) {
+  $html = Ensure-Markers -html $html -content $currentContent
 }
-Set-Content -Encoding UTF8 $postPath $new
-Write-Host "[ASD] Updated blog/$Slug.html (markers ensured)"
+$html = Replace-BetweenMarkers -html $html -content $newContent
 
-# --- Touch timestamp (affects blog index order) if requested
-if ($TouchFileTime -and $Date) {
-  try { $(Get-Item $postPath).LastWriteTime = [datetime]::Parse($Date) } catch {}
-}
+# ==== head updates ====
+if ($Title)       { $html = Set-HeadTitle       -html $html -newTitle $Title }
+if ($Description) { $html = Set-HeadDescription -html $html -newDesc  $Description }
 
-# --- Update feed.xml entry (create if missing)
-$feedPath = Join-Path $Root "feed.xml"
-if (Test-Path $feedPath) {
-  try {
-    [xml]$rss = Get-Content $feedPath
-    $chan = $rss.rss.channel
-    $postUrl = ($dom.TrimEnd('/') + "/blog/$Slug.html")
-    $found = $false
-    foreach($it in $chan.item) {
-      if ($it.link -and $it.link -eq $postUrl) {
-        if ($Title) { $it.title = $Title }
-        if ($Description) { $it.description = $Description }
-        if ($Date) { $it.pubDate = ([DateTime]::Parse($Date)).ToUniversalTime().ToString("R") }
-        $found = $true
-      }
-    }
-    if (-not $found) {
-      $item = $rss.CreateElement("item")
-      $t = $rss.CreateElement("title"); $t.InnerText = $Title; $null = $item.AppendChild($t)
-      $l = $rss.CreateElement("link");  $l.InnerText = "$postUrl"; $null = $item.AppendChild($l)
-      $g = $rss.CreateElement("guid");  $g.InnerText = "$postUrl"; $null = $item.AppendChild($g)
-      $d = $rss.CreateElement("pubDate"); $d.InnerText = [DateTime]::UtcNow.ToString("R"); $null = $item.AppendChild($d)
-      $desc = $rss.CreateElement("description"); $desc.InnerText = $Description; $null = $item.AppendChild($desc)
-      $null = $chan.AppendChild($item)
-    }
-    $rss.Save($feedPath)
-    Write-Host "[ASD] feed.xml updated"
-  } catch { Write-Warning "[ASD] Could not update feed.xml: $_" }
-} else {
-  Write-Warning "[ASD] feed.xml not found; skipping"
-}
-
-# --- Friendly manual-next-step hint (does not execute bake)
-$brandHint = "Your Brand"
-$moneyHint = "https://your-domain.com"
-try {
-  if ($cfg) {
-    if ($cfg.site -and $cfg.site.name) { $brandHint = $cfg.site.name }
-    elseif ($cfg.brand) { $brandHint = $cfg.brand }
-    if ($cfg.moneySite) { $moneyHint = $cfg.moneySite }
-  }
-} catch {}
-Write-Host "`n[ASD] Next (manual):"
-Write-Host ("  .\parametric-static\scripts\bake.ps1 -Brand ""{0}"" -Money ""{1}""" -f $brandHint, $moneyHint)
+# ==== save ====
+Set-Content -Encoding UTF8 $postAbs $html
+Write-Host "[ASD] Updated $postRel (markers ensured)"

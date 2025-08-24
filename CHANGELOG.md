@@ -16,3 +16,8 @@
 git add CHANGELOG.md
 git commit -m "docs: add CHANGELOG.md for v1.1.0"
 git push
+
+## 1.1.0 - 2025-08-24
+- Wizard end-to-end OK
+- Pagination, redirects manager, link checker
+- Bake & sitemap/robots auto-gen

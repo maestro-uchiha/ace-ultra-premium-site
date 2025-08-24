@@ -1,83 +1,96 @@
-# Amaterasu Static Deploy — check-links.ps1 (safe for tokens + external links)
-# - Skips layout.html and partials/*
-# - Ignores http(s), //, mailto:, tel:, data:, sms:, javascript:, #
-# - Ignores template tokens like {{PREFIX}} and {{BRAND}}
-# - Treats paths ending with "/" as ".../index.html"
-# - Resolves /root/relative from repo root, and ./../ relative to the current file
+param(
+  [string]$Root = $(Split-Path -Parent (Split-Path -Parent $PSCommandPath))
+)
 
-$Root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
-Set-Location $Root
+$ErrorActionPreference = 'Stop'
 
-# files to scan
-$files = Get-ChildItem $Root -Recurse -Include *.html,*.xml -File |
+# Paths
+$site = $Root
+$assets = Join-Path $site 'assets'
+$partials = Join-Path $site 'partials'
+$layout = Join-Path $site 'layout.html'
+
+# Collect .html files to scan (skip layout/partials/assets)
+$files = Get-ChildItem -Path $site -Recurse -File -Include *.html |
   Where-Object {
-    $_.FullName -notmatch '\\partials\\' -and
-    $_.Name -ne 'layout.html'
+    $_.FullName -ne $layout -and
+    $_.FullName -notmatch '\\assets\\' -and
+    $_.FullName -notmatch '\\partials\\'
   }
+
+# Helpers
+function Resolve-LinkPath {
+  param(
+    [string]$FromFile,
+    [string]$Href
+  )
+  # ignore external / special schemes
+  if ($Href -match '^(?i)(https?:|mailto:|tel:|javascript:|data:)') { return $null }
+
+  # strip query/hash
+  $clean = $Href -replace '\#.*$','' -replace '\?.*$',''
+
+  if ([string]::IsNullOrWhiteSpace($clean)) { return $null }
+
+  # Root-absolute -> project root
+  if ($clean.StartsWith('/')) {
+    $p = $clean.TrimStart('/')
+    $full = Join-Path $site $p
+  } else {
+    # relative to the file's directory
+    $dir = Split-Path $FromFile -Parent
+    $full = Join-Path $dir $clean
+  }
+
+  # If it’s a “directory style” link, assume index.html
+  if ($full.EndsWith('\') -or $clean.EndsWith('/')) {
+    $full = Join-Path $full 'index.html'
+  } elseif (-not [IO.Path]::GetExtension($full)) {
+    # If no extension and target is a directory, also assume index.html
+    if (Test-Path $full -PathType Container) {
+      $full = Join-Path $full 'index.html'
+    }
+  }
+
+  return $full
+}
 
 $broken = New-Object System.Collections.Generic.List[string]
 
-# helper: should skip this href/src?
-function Skip-Link([string]$h) {
-  if (-not $h) { return $true }
-  $h = $h.Trim()
-
-  # protocols / externals / fragments
-  if ($h -match '^(https?:)?//') { return $true }
-  if ($h -match '^(mailto:|tel:|data:|javascript:|sms:)') { return $true }
-  if ($h -match '^\s*#') { return $true }
-
-  # template tokens (pre-bake)
-  if ($h -match '\{\{[^}]+\}\}') { return $true }         # {{PREFIX}}, {{BRAND}}, etc.
-
-  return $false
-}
+# Regexes
+$rxHref = [regex]'(?is)href\s*=\s*["'']([^"'']+)["'']'
+$rxSrc  = [regex]'(?is)src\s*=\s*["'']([^"'']+)["'']'
 
 foreach ($f in $files) {
   $html = Get-Content $f.FullName -Raw
 
-  # collect href/src values (very light regex, good enough for our static HTML)
-  $matches = Select-String -InputObject $html -Pattern '(?i)\b(?:href|src)=["'']([^"''\s]+)' -AllMatches |
-    ForEach-Object { $_.Matches } | ForEach-Object { $_.Groups[1].Value }
+  # Collect candidate links
+  $hrefs = @()
+  foreach ($m in $rxHref.Matches($html)) { $hrefs += $m.Groups[1].Value }
+  foreach ($m in $rxSrc.Matches($html))  { $hrefs += $m.Groups[1].Value }
 
-  foreach ($h in $matches) {
-    if (Skip-Link $h) { continue }
+  # unique
+  $hrefs = $hrefs | Sort-Object -Unique
 
-    # strip query/hash
-    $p = ($h -replace '[?#].*$','')
+  foreach ($h in $hrefs) {
+    $target = Resolve-LinkPath -FromFile $f.FullName -Href $h
+    if ($null -eq $target) { continue }
 
-    # resolve candidate on disk
-    $candidate = $null
-    if ($p.StartsWith('/')) {
-      # root-relative (treat repo root as site root)
-      $candidate = Join-Path $Root ($p.TrimStart('/') -replace '/','\')
-    } else {
-      # file-relative
-      $candidate = Join-Path $f.DirectoryName ($p -replace '/','\')
-    }
-
-    # if ends with "/", assume index.html
-    if ($p -match '/$') {
-      $candidate = Join-Path $candidate 'index.html'
-    }
-
-    # if target is a directory, also try index.html
-    if (-not (Test-Path $candidate)) {
-      if (Test-Path $candidate -PathType Container) {
-        $candidate2 = Join-Path $candidate 'index.html'
-        if (Test-Path $candidate2) { continue }
-      }
-      # record broken (relative to repo root for clarity)
-      $relFile = $f.FullName.Substring($Root.Length + 1)
-      $broken.Add("{0} -> {1}" -f $relFile, $h)
+    # Only check local file existence
+    if (-not (Test-Path $target -PathType Leaf)) {
+      $relFile = ($f.FullName.Substring($site.Length+1)).Replace('\','/')
+      # PARENTHESIZE the -f to avoid precedence issues, OR just interpolate:
+      $broken.Add(("{0} -> {1}" -f $relFile, $h))
+      # alternative (also safe):
+      # $broken.Add("$relFile -> $h")
     }
   }
 }
 
 if ($broken.Count -gt 0) {
-  Write-Host "Broken links:"
+  Write-Host "Broken links:" -ForegroundColor Yellow
   $broken | ForEach-Object { Write-Host "  $_" }
   exit 1
 } else {
-  Write-Host "No broken local links found."
+  Write-Host "No broken local links found." -ForegroundColor Green
 }
