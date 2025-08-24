@@ -8,9 +8,11 @@
 [CmdletBinding()]
 param()
 
+# Resolve script locations up-front (no reliance on $S.PS)
+$ScriptsDir = Split-Path -Parent $PSCommandPath
+
 # Load helpers (single source of truth)
-$here = Split-Path -Parent $PSCommandPath
-. (Join-Path $here "_lib.ps1")
+. (Join-Path $ScriptsDir "_lib.ps1")
 
 Set-StrictMode -Version Latest
 
@@ -52,17 +54,17 @@ function Do-NewPost {
   $when  = Ask "ISO date (yyyy-MM-dd) or blank for today" ""
 
   $params = @{ Title = $title; Slug = $slug; Description = $desc }
+  $newPostPath = Join-Path $ScriptsDir "new-post.ps1"
 
   if (-not [string]::IsNullOrWhiteSpace($when)) {
     try { $d = [datetime]::Parse($when) } catch { $d = Get-Date }
     try {
-      & "$($S.PS)\new-post.ps1" @params -Date $d
+      & $newPostPath @params -Date $d
     } catch {
-      # Fallback if your new-post.ps1 doesn't support -Date
-      & "$($S.PS)\new-post.ps1" @params
+      & $newPostPath @params
     }
   } else {
-    & "$($S.PS)\new-post.ps1" @params
+    & $newPostPath @params
   }
 }
 
@@ -72,12 +74,12 @@ function Do-EditPost {
   $d = Ask "New Description (leave blank to keep)" ""
   $b = Ask "New BodyHtml (leave blank to keep)" ""
 
-  $args = @('-Slug', $slug)
-  if (-not [string]::IsNullOrWhiteSpace($t)) { $args += @('-Title', $t) }
-  if (-not [string]::IsNullOrWhiteSpace($d)) { $args += @('-Description', $d) }
-  if (-not [string]::IsNullOrWhiteSpace($b)) { $args += @('-BodyHtml', $b) }
+  $callArgs = @('-Slug', $slug)
+  if (-not [string]::IsNullOrWhiteSpace($t)) { $callArgs += @('-Title', $t) }
+  if (-not [string]::IsNullOrWhiteSpace($d)) { $callArgs += @('-Description', $d) }
+  if (-not [string]::IsNullOrWhiteSpace($b)) { $callArgs += @('-BodyHtml', $b) }
 
-  & "$($S.PS)\update-post.ps1" @args
+  & (Join-Path $ScriptsDir "update-post.ps1") @callArgs
 }
 
 function Do-RenamePost {
@@ -86,22 +88,22 @@ function Do-RenamePost {
   $keep = Ask-YesNo "Leave redirect file in place?" $true
   $switch = @()
   if ($keep) { $switch = @('-LeaveRedirect') }
-  & "$($S.PS)\rename-post.ps1" -OldSlug $old -NewSlug $new @switch
+  & (Join-Path $ScriptsDir "rename-post.ps1") -OldSlug $old -NewSlug $new @switch
 }
 
 function Do-DeletePost {
   $slug = Ask "Slug to delete"
-  & "$($S.PS)\delete-post.ps1" -Slug $slug
+  & (Join-Path $ScriptsDir "delete-post.ps1") -Slug $slug
 }
 
 function Do-Extract {
   $slug = Ask "Slug to extract to drafts"
-  & "$($S.PS)\extract-post.ps1" -Slug $slug
+  & (Join-Path $ScriptsDir "extract-post.ps1") -Slug $slug
 }
 
 function Do-ApplyDraft {
   $slug = Ask "Slug to apply draft to"
-  & "$($S.PS)\apply-draft.ps1" -Slug $slug
+  & (Join-Path $ScriptsDir "apply-draft.ps1") -Slug $slug
 }
 
 function Do-Redirects {
@@ -113,27 +115,28 @@ function Do-Redirects {
   Write-Host "  4) Enable by index"
   Write-Host "  5) List"
   $c = Read-Host "Choose 1-5"
+  $redir = Join-Path $ScriptsDir "redirects.ps1"
   switch ($c) {
     '1' {
       $from = Ask "From path (e.g. /legacy or /old/*)"
       $to   = Ask "To URL or path (e.g. /blog/new.html)"
       $code = Ask "HTTP code (301 or 302)" "301"
-      & "$($S.PS)\redirects.ps1" -Add -From $from -To $to -Code ([int]$code)
+      & $redir -Add -From $from -To $to -Code ([int]$code)
     }
     '2' {
       $i = Ask "Index to remove"
-      & "$($S.PS)\redirects.ps1" -Remove -Index ([int]$i)
+      & $redir -Remove -Index ([int]$i)
     }
     '3' {
       $i = Ask "Index to disable"
-      & "$($S.PS)\redirects.ps1" -Disable -Index ([int]$i)
+      & $redir -Disable -Index ([int]$i)
     }
     '4' {
       $i = Ask "Index to enable"
-      & "$($S.PS)\redirects.ps1" -Enable -Index ([int]$i)
+      & $redir -Enable -Index ([int]$i)
     }
     '5' {
-      & "$($S.PS)\redirects.ps1" -List
+      & $redir -List
     }
     default { Write-Host "Invalid choice." }
   }
@@ -141,12 +144,12 @@ function Do-Redirects {
 
 function Do-BuildPagination {
   $size = Ask "Page size" "10"
-  & "$($S.PS)\build-blog-index.ps1" -PageSize ([int]$size)
+  & (Join-Path $ScriptsDir "build-blog-index.ps1") -PageSize ([int]$size)
 }
 
-function Do-Bake       { & "$($S.PS)\bake.ps1" }
-function Do-BuildBake  { & "$($S.PS)\build-and-bake.ps1" }
-function Do-CheckLinks { & "$($S.PS)\check-links.ps1" }
+function Do-Bake       { & (Join-Path $ScriptsDir "bake.ps1") }
+function Do-BuildBake  { & (Join-Path $ScriptsDir "build-and-bake.ps1") }
+function Do-CheckLinks { & (Join-Path $ScriptsDir "check-links.ps1") }
 
 function Do-ListPosts {
   if (-not (Test-Path $S.Blog)) { Write-Host "(no blog/ folder yet)"; return }
@@ -182,21 +185,17 @@ function Do-EditConfig {
   }
 }
 
-# ------- Git helpers (robust; avoid $args name collision) -------
+# ------- Git helpers (robust; path-safe) -------
 function Test-GitAvailable {
-  try {
-    $null = (& git --version) 2>$null
-    return ($LASTEXITCODE -eq 0)
-  } catch { return $false }
+  try { $null = (& git --version) 2>$null; return ($LASTEXITCODE -eq 0) } catch { return $false }
 }
-
-function Test-InGitRepo {
+function Get-GitRoot {
   try {
-    $null = (& git rev-parse --is-inside-work-tree) 2>$null
-    return ($LASTEXITCODE -eq 0)
-  } catch { return $false }
+    $root = (& git rev-parse --show-toplevel) 2>$null
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($root)) { return $root }
+  } catch {}
+  return $null
 }
-
 function Git-Run([string[]]$GitArgs, [switch]$Capture) {
   if ($Capture) {
     $out = & git @GitArgs 2>&1
@@ -207,22 +206,8 @@ function Git-Run([string[]]$GitArgs, [switch]$Capture) {
     return @{ code = $LASTEXITCODE; out = $null }
   }
 }
-
-function Get-GitRoot {
-  try {
-    $root = (& git rev-parse --show-toplevel) 2>$null
-    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($root)) { return $root }
-  } catch {}
-  return $null
-}
-
 function Do-CommitAll {
-  if (-not (Test-GitAvailable)) {
-    Write-Error "git is not installed or not on PATH. Install Git and retry."
-    return
-  }
-
-  # Prefer the actual repo root, else fallback to project root
+  if (-not (Test-GitAvailable)) { Write-Error "git is not installed or not on PATH."; return }
   $repoRoot = Get-GitRoot
   if (-not $repoRoot) {
     if (-not (Ask-YesNo "This folder isn't a git repo. Initialize one at '$($S.Root)'?")) { return }
@@ -233,66 +218,43 @@ function Do-CommitAll {
       $bm = Git-Run -GitArgs @('branch','-M','main') -Capture
       if ($bm.code -ne 0) { Write-Warning "Could not set default branch to 'main':`n$($bm.out)" }
       Write-Host "[ASD] Git repository initialized at $($S.Root)."
-    } finally { Pop-Location }
+    } finally {
+      Pop-Location
+    }
     $repoRoot = $S.Root
   }
 
   Push-Location $repoRoot
   try {
     & git status
-
-    # Stage everything from the repo root
     $add = Git-Run -GitArgs @('add','-A','--','.') -Capture
-    if ($add.code -ne 0) {
-      Write-Error "git add failed:`n$($add.out)"
-      return
-    }
+    if ($add.code -ne 0) { Write-Error "git add failed:`n$($add.out)"; return }
 
-    # Any staged changes?
     $staged = (& git diff --cached --name-only) 2>$null
-    if ([string]::IsNullOrWhiteSpace($staged)) {
-      Write-Host "[ASD] Nothing staged; nothing to commit."
-      return
-    }
+    if ([string]::IsNullOrWhiteSpace($staged)) { Write-Host "[ASD] Nothing staged; nothing to commit."; return }
 
-    # Commit
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm"
     $defaultMsg = "asd: batch changes ($ts)"
     $msg = Ask "Commit message" $defaultMsg
     if ([string]::IsNullOrWhiteSpace($msg)) { $msg = $defaultMsg }
 
     $commit = Git-Run -GitArgs @('commit','-m', $msg) -Capture
-    if ($commit.code -ne 0) {
-      Write-Error "git commit failed:`n$($commit.out)"
-      return
-    }
+    if ($commit.code -ne 0) { Write-Error "git commit failed:`n$($commit.out)"; return }
     Write-Host "[ASD] Commit created."
 
-    # Optional tag
-    if (Ask-YesNo "Create a tag?") {
-      $defaultTag = ""
-      if ($cfg -and $cfg.PSObject.Properties.Name -contains 'Version' -and -not [string]::IsNullOrWhiteSpace($cfg.Version)) {
-        $defaultTag = "v$($cfg.Version)"
-      } else {
-        $defaultTag = "v" + (Get-Date -Format "yyyy.MM.dd.HHmm")
-      }
-      $tag = Ask "Tag name" $defaultTag
-      if (-not [string]::IsNullOrWhiteSpace($tag)) {
-        $tagres = Git-Run -GitArgs @('tag','-a', $tag, '-m', $tag) -Capture
-        if ($tagres.code -ne 0) { Write-Warning "git tag failed:`n$($tagres.out)" } else { Write-Host "[ASD] Tag '$tag' created." }
-      }
-    }
-
-    # Optional push
     if (Ask-YesNo "Push to remote? (requires your git remote auth)") {
       $push = Git-Run -GitArgs @('push') -Capture
-      if ($push.code -ne 0) { Write-Warning "git push failed:`n$($push.out)" } else { Write-Host "[ASD] Pushed commits." }
+      if ($push.code -ne 0) {
+        Write-Warning "git push failed:`n$($push.out)"
+      } else {
+        Write-Host "[ASD] Pushed commits."
+      }
+
       if (Ask-YesNo "Push tags too?") {
         $pt = Git-Run -GitArgs @('push','--tags') -Capture
         if ($pt.code -ne 0) { Write-Warning "git push --tags failed:`n$($pt.out)" } else { Write-Host "[ASD] Pushed tags." }
       }
     }
-
   } finally {
     Pop-Location
   }
