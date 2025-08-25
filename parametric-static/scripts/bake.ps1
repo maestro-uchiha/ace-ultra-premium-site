@@ -7,7 +7,7 @@
    - Rebuilds /blog/ index (basic)
    - Generates sitemap.xml and preserves robots.txt + appends one Sitemap line
    - Preserves file timestamps so baking doesn't change dates
-   - Ensures both ASD:CONTENT_* and ASD:BODY_* pages wrap correctly
+   - Special-case 404.html: inject <base href="$Base"> so assets work at any route
    ============================================ #>
 
 # Load shared helpers
@@ -124,8 +124,6 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $origWriteUtc  = $it.LastWriteTimeUtc
 
     $raw     = Get-Content $_.FullName -Raw
-
-    # NEW: robust content extraction supports ASD:CONTENT_* or ASD:BODY_*
     $content = Extract-Content $raw
 
     # Title: prefer first <h1> in content, fallback to filename
@@ -149,6 +147,21 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $final = Rewrite-RootLinks $final $prefix
     $final = Normalize-DashesToPipe $final
 
+    # --- SPECIAL CASE: 404.html needs a <base href="$Base"> so assets work at any 404 route ---
+    $relFromRoot = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'
+    if ($relFromRoot -ieq '404.html') {
+      if ($final -notmatch '(?is)<base\b') {
+        $baseTag = '<base href="' + $Base + '">'
+        # inject right after <head>
+        if ($final -match '(?is)<head[^>]*>') {
+          $final = [regex]::Replace($final, '(?is)<head[^>]*>', { param($m) $m.Value + "`r`n  " + $baseTag }, 1)
+        } else {
+          # very unlikely, but just in case
+          $final = $baseTag + "`r`n" + $final
+        }
+      }
+    }
+
     Set-Content -Encoding UTF8 $_.FullName $final
 
     # Restore timestamps (preserve original dates)
@@ -166,7 +179,7 @@ Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
     $_.FullName -ne $LayoutPath -and
     $_.FullName -notmatch '\\assets\\' -and
     $_.FullName -notmatch '\\partials\\' -and
-    $_.Name -ne '404.html'   # exclude 404 only from sitemap (still wrapped above)
+    $_.Name -ne '404.html'
   } |
   ForEach-Object {
     $rel = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'
@@ -273,11 +286,14 @@ Disallow: /
 # Strip any prior Sitemap lines
 $robots = [regex]::Replace($robots, '(?im)^\s*Sitemap:\s*.*\r?\n?', '')
 
-# Build sitemap reference: absolute if Base is absolute; else relative
+# Always include Base in the sitemap reference:
+# - If Base is absolute (http/https), produce absolute sitemap URL
+# - If Base is rooted (e.g. /repo/), produce /repo/sitemap.xml
 if ($Base -match '^[a-z]+://') {
   $absMap = (New-Object Uri((New-Object Uri($Base)), 'sitemap.xml')).AbsoluteUri
 } else {
-  $absMap = 'sitemap.xml'
+  $absMap = ($Base.TrimEnd('/') + '/sitemap.xml')
+  $absMap = $absMap -replace '/{2,}','/'
 }
 
 # Ensure trailing newline and append the single canonical Sitemap line

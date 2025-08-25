@@ -64,5 +64,5 @@ Disallow: /
 
 # Sitemap location
 
-Sitemap: sitemap.xml
+Sitemap: /https:/maestro-uchiha.github.io/ace-ultra-premium-site/sitemap.xml
 
