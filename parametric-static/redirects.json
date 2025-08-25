@@ -1,14 +1,3 @@
 ﻿[
-    {
-        "from":  "/blog/new",
-        "to":  "/blog/new.html",
-        "code":  301,
-        "enabled":  true
-    },
-    {
-        "from":  "/legacy",
-        "to":  "/blog/eleventh-post.html",
-        "code":  301,
-        "enabled":  true
-    }
+
 ]

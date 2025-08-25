@@ -137,7 +137,7 @@ function Write-RedirectStub([string]$outPath, [string]$absUrl, [int]$code) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Redirectingâ€¦</title>
+  <title>Redirecting…</title>
   <meta name="robots" content="noindex">
   <meta http-equiv="refresh" content="0;url=$href">
   <script>location.replace('$jsu');</script>
@@ -188,6 +188,22 @@ function Generate-RedirectStubs([string]$redirectsJson, [string]$root, [string]$
     $count++
   }
   return $count
+}
+
+# Inject a tiny fixer only into 404.html:
+# - Adds an absolute CSS link using BaseUrl
+# - Rewrites any "Home" link (data-asd-home or typical index hrefs) to absolute BaseUrl
+function Inject-404Fix([string]$html, [string]$absBase) {
+  if ([string]::IsNullOrWhiteSpace($absBase)) { return $html }
+  $absBase = Normalize-BaseUrlLocal $absBase
+  $snip = @"
+<script>(function(){try{var BASE='$absBase';var l=document.createElement('link');l.rel='stylesheet';l.href=BASE+'assets/css/style.css';document.head.appendChild(l);}catch(e){}try{var sels=['a[data-asd-home]','a[href="index.html"]','a[href="/"]','a[href="/index.html"]'];for(var i=0;i<sels.length;i++){var list=document.querySelectorAll(sels[i]);for(var j=0;j<list.length;j++){list[j].setAttribute('href', BASE);}}}catch(e){}})();</script>
+"@
+  if ($html -match '(?is)</head>') {
+    return [regex]::Replace($html, '(?is)</head>', ($snip + "`r`n</head>"), 1)
+  } else {
+    return $html + "`r`n" + $snip
+  }
 }
 
 $paths = Get-ASDPaths
@@ -318,6 +334,10 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     # Fix absolute-root links and normalize dashes last
     $final = Rewrite-RootLinks $final $prefix
     $final = Normalize-DashesToPipe $final
+
+    # Special-case: 404.html needs absolute CSS + correct "Home" regardless of path depth
+    $is404 = ([System.IO.Path]::GetFileName($_.FullName)).ToLower() -eq '404.html'
+    if ($is404) { $final = Inject-404Fix $final $Base }
 
     Set-Content -Encoding UTF8 $_.FullName $final
 
@@ -462,4 +482,3 @@ Set-Content -Encoding UTF8 $robotsPath $robots
 Write-Host "[ASD] robots.txt: Sitemap -> $absMap"
 
 Write-Host "[ASD] Done."
-
