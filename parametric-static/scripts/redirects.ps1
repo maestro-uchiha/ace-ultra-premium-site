@@ -78,6 +78,36 @@ function Strip-Query([string]$p) {
   return $p
 }
 
+# --- Config helpers (read BaseUrl + compute origin) ---
+function Read-ASDConfig {
+  $cfgPath = Join-Path $Root "parametric-static/config.json"
+  if (-not (Test-Path $cfgPath)) { return $null }
+  try {
+    $raw = Get-Content $cfgPath -Raw
+    if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+    return ($raw | ConvertFrom-Json -ErrorAction Stop)
+  } catch { return $null }
+}
+
+function Get-BaseOrigin {
+  $cfg = Read-ASDConfig
+  if ($null -eq $cfg -or [string]::IsNullOrWhiteSpace($cfg.BaseUrl)) { return "" }
+  try {
+    $u = New-Object System.Uri($cfg.BaseUrl)
+    if ($u -and $u.Scheme -and $u.Authority) { return ($u.Scheme + "://" + $u.Authority) }
+  } catch {}
+  return ""
+}
+
+# Return an absolute URL given a possibly-rooted path
+function Make-AbsoluteUrl([string]$toPath) {
+  $toPath = Normalize-Pathish $toPath
+  if ($toPath -match '^(https?://)') { return $toPath }
+  $origin = Get-BaseOrigin
+  if ([string]::IsNullOrWhiteSpace($origin)) { return $toPath } # fallback
+  return ($origin + $toPath)
+}
+
 function Migrate-Entry { param($r)
   if ($null -eq $r) { return $r }
   # old -> new: disabled => enabled
@@ -148,7 +178,7 @@ function Remove-Stub {
 
 function Write-Stub {
   param([string]$fromPath, [string]$toPath, [int]$code = 301)
-  $final = Normalize-Pathish $toPath
+  $absolute = Make-AbsoluteUrl $toPath   # <— always absolute now
   $stub  = Get-StubPath $fromPath
   $dir   = Split-Path -Parent $stub
   if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
@@ -159,16 +189,16 @@ function Write-Stub {
 <head>
   <meta charset="utf-8">
   <title>Redirecting…</title>
-  <meta http-equiv="refresh" content="0; url=$final">
+  <meta http-equiv="refresh" content="0; url=$absolute">
   <meta name="robots" content="noindex,nofollow">
   <script>
     (function(){
-      var u = "$final";
+      var u = "$absolute";
       try { if (window.location && window.location.replace) { window.location.replace(u); return; } } catch(e) {}
       window.location.href = u;
     })();
   </script>
-  <noscript><meta http-equiv="refresh" content="0; url=$final"></noscript>
+  <noscript><meta http-equiv="refresh" content="0; url=$absolute"></noscript>
 </head>
 <body></body>
 </html>
@@ -188,9 +218,7 @@ function Validate-Index { param([int]$i, $arr)
 function Rebuild-AllStubs {
   param($items)
   $items = Ensure-ArrayList $items
-  # First, clear stubs for all entries (avoid stale targets)
   foreach ($r in $items) { if ($r.from) { Remove-Stub $r.from } }
-  # Then, write stubs only for enabled entries
   foreach ($r in $items) {
     if ($r.enabled -and $r.from -and $r.to) { Write-Stub $r.from $r.to $r.code }
   }
