@@ -28,14 +28,25 @@ function New-ArrayList { New-Object System.Collections.ArrayList }
 function To-ArrayList { param($x)
   $list = New-ArrayList
   if ($null -eq $x) { return $list }
-  if ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) { foreach ($i in $x) { [void]$list.Add($i) } }
-  else { [void]$list.Add($x) }
+  if ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) {
+    foreach ($i in $x) { [void]$list.Add($i) }
+  } else {
+    [void]$list.Add($x)
+  }
   return $list
 }
 
 function Ensure-ArrayList { param($x)
   if ($x -is [System.Collections.ArrayList]) { return $x }
   return (To-ArrayList $x)
+}
+
+function Append-Item { param($list, $item)
+  # Rebuilds as ArrayList regardless of input shape; avoids .Add() on PSCustomObject
+  $out = New-ArrayList
+  foreach ($i in (To-ArrayList $list)) { [void]$out.Add($i) }
+  [void]$out.Add($item)
+  return $out
 }
 
 function Get-Count { param($x)
@@ -78,7 +89,7 @@ function Migrate-Entry { param($r)
     Add-Member -InputObject $r -NotePropertyName code -NotePropertyValue 301 -Force | Out-Null
   }
 
-  # NEW: sanitize from/to strings
+  # sanitize from/to
   if ($r.PSObject.Properties.Match('from').Count -gt 0 -and $r.from) { $r.from = Normalize-Pathish ([string]$r.from) }
   if ($r.PSObject.Properties.Match('to').Count   -gt 0 -and $r.to)   { $r.to   = Normalize-Pathish ([string]$r.to)   }
   return $r
@@ -136,8 +147,9 @@ if ($Add) {
   if ($Code -notin 301,302,307,308) { $Code = 301 }
 
   $new = [pscustomobject]@{ from=$From; to=$To; code=$Code; enabled=$true }
-  $items = Ensure-ArrayList $items
-  [void]$items.Add($new)
+
+  # SAFE append without relying on .Add()
+  $items = Append-Item $items $new
 
   Save-Redirects -items $items -path $File
   Write-Host "[redirects] added: $From -> $To (code $Code)"
@@ -190,7 +202,12 @@ if ($Remove) {
   $items = Ensure-ArrayList $items
   Validate-Index -i $Index -arr $items
   $removed = $items[$Index]
-  $items.RemoveAt($Index)
+  # Rebuild without relying on RemoveAt (works even if shape drifted)
+  $newList = New-ArrayList
+  for ($i = 0; $i -lt (Get-Count $items); $i++) {
+    if ($i -ne $Index) { [void]$newList.Add($items[$i]) }
+  }
+  $items = $newList
   Save-Redirects -items $items -path $File
   if ($removed) { Write-Host ("[redirects] removed #{0}: {1} -> {2}" -f $Index, $removed.from, $removed.to) }
   else { Write-Host ("[redirects] removed #{0}" -f $Index) }
