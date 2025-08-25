@@ -1,7 +1,7 @@
 ﻿[
     {
         "from":  "/blog/new",
-        "to":  "/ace-ultra-premium-site/blog/new.html",
+        "to":  "/blog/new.html",
         "code":  301,
         "enabled":  true
     },

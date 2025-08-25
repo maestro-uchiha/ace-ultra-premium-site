@@ -2,6 +2,6 @@
     "SiteName":  "Ace Ultra Premium",
     "StoreUrl":  "https://example.com",
     "Description":  "Premium {{BRAND}} | quality, reliability, trust.",
-    "BaseUrl":  "/https:/maestro-uchiha.github.io/ace-ultra-premium-site/",
+    "BaseUrl":  "https://maestro-uchiha.github.io/ace-ultra-premium-site/",
     "Version":  "1.1.0"
 }

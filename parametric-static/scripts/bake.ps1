@@ -1,4 +1,4 @@
-<# ============================================
+﻿<# ============================================
    Amaterasu Static Deploy (ASD) - bake.ps1
    - Uses config.json as the single source of truth
    - Generates instant redirect stubs from redirects.json
@@ -61,6 +61,28 @@ function Collapse-DoubleSlashesPreserveSchemeLocal([string]$url) {
   return ($url -replace '/{2,}','/')
 }
 
+# --- BaseUrl normalization (prevents https:/ and https:/// variants) ---
+function Normalize-BaseUrlLocal([string]$b) {
+  if ([string]::IsNullOrWhiteSpace($b)) { return "/" }
+  $b = $b.Trim()
+  # Drop accidental leading slashes before scheme: "/https://..." -> "https://..."
+  $b = $b -replace '^/+(?=https?:)', ''
+  # Force exactly two slashes after scheme
+  $b = $b -replace '^((?:https?):)/{1,}', '$1//'
+  if ($b -match '^(https?://)(.+)$') {
+    $scheme = $matches[1]; $rest = $matches[2]
+    # Avoid "https:///host..." by trimming leading slash from the rest
+    $rest = $rest.TrimStart('/')
+    $b = $scheme + $rest
+    if (-not $b.EndsWith('/')) { $b += '/' }
+    return $b
+  } else {
+    # rooted path form (e.g., "/repo/" or "repo")
+    $b = '/' + $b.Trim('/') + '/'
+    return $b
+  }
+}
+
 function Resolve-RedirectTarget([string]$to, [string]$base) {
   if ([string]::IsNullOrWhiteSpace($to)) { return $base }
   $to = $to.Trim()
@@ -115,7 +137,7 @@ function Write-RedirectStub([string]$outPath, [string]$absUrl, [int]$code) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Redirecting…</title>
+  <title>Redirectingâ€¦</title>
   <meta name="robots" content="noindex">
   <meta http-equiv="refresh" content="0;url=$href">
   <script>location.replace('$jsu');</script>
@@ -178,7 +200,8 @@ $BlogDir    = $paths.Blog
 $Brand = $cfg.SiteName
 $Money = $cfg.StoreUrl
 $Desc  = $cfg.Description
-$Base  = Ensure-AbsoluteBaseUrl $cfg.BaseUrl
+# Normalize BaseUrl aggressively here to avoid malformed scheme/host/path
+$Base  = Normalize-BaseUrlLocal ([string]$cfg.BaseUrl)
 $Year  = (Get-Date).Year
 
 Write-Host "[ASD] Baking... brand='$Brand' store='$Money' base='$Base'"
@@ -193,20 +216,22 @@ if (-not (Test-Path $LayoutPath)) {
 }
 $Layout = Get-Content $LayoutPath -Raw
 
-# ---- Build /blog/ index (simple unordered list inside markers) ----
+# ---- Build /blog/ index (stable dates: meta date, else CreationTime) ----
 $BlogIndex = Join-Path $BlogDir "index.html"
 if (Test-Path $BlogIndex) {
-  $posts = New-Object System.Collections.Generic.List[string]
+
+  # Collect post metadata first (skip stubs), then sort by explicit date key
+  $entries = New-Object System.Collections.ArrayList
+
   Get-ChildItem -Path $BlogDir -Filter *.html -File |
     Where-Object { $_.Name -ne "index.html" } |
-    Sort-Object LastWriteTime -Descending |
     ForEach-Object {
       $html  = Get-Content $_.FullName -Raw
 
       # Skip redirect stubs
       if ($html -match '(?is)<!--\s*ASD:REDIRECT\b') { return }
 
-      # Prefer <title>, else first <h1>, else filename
+      # Title: prefer <title>, else first <h1>, else filename (then normalize dashes)
       $mTitle = [regex]::Match($html, '(?is)<title>(.*?)</title>')
       if ($mTitle.Success) {
         $title = $mTitle.Groups[1].Value
@@ -214,16 +239,32 @@ if (Test-Path $BlogIndex) {
         $mH1 = [regex]::Match($html, '(?is)<h1[^>]*>(.*?)</h1>')
         $title = if ($mH1.Success) { $mH1.Groups[1].Value } else { $_.BaseName }
       }
-
-      # Prefer post's meta date; else fallback to creation time
-      $dateDisplay = Get-MetaDateFromHtml $html
-      if (-not $dateDisplay) { $dateDisplay = $_.CreationTime.ToString('yyyy-MM-dd') }
-
       $title = Normalize-DashesToPipe $title
-      $rel   = $_.Name
-      $li    = ('<li><a href="./{0}">{1}</a><small> | {2}</small></li>' -f $rel, $title, $dateDisplay)
-      $posts.Add($li)
+
+      # Date: prefer meta; else file CreationTime (stable, not modified by bake)
+      $metaDate = Get-MetaDateFromHtml $html
+      if ($metaDate) {
+        $dateDisplay = $metaDate
+        $sortKey     = TryParse-Date $metaDate
+      } else {
+        $dateDisplay = $_.CreationTime.ToString('yyyy-MM-dd')
+        $sortKey     = $_.CreationTime
+      }
+
+      $null = $entries.Add([pscustomobject]@{
+        Title     = $title
+        Href      = $_.Name
+        DateText  = $dateDisplay
+        SortKey   = $sortKey
+      })
     }
+
+  # Sort by SortKey (desc), then build list items
+  $posts = New-Object System.Collections.Generic.List[string]
+  foreach ($e in ($entries | Sort-Object SortKey -Descending)) {
+    $li = ('<li><a href="./{0}">{1}</a><small> | {2}</small></li>' -f $e.Href, $e.Title, $e.DateText)
+    $posts.Add($li)
+  }
 
   $bi = Get-Content $BlogIndex -Raw
   $joined = [string]::Join([Environment]::NewLine, $posts)
@@ -421,3 +462,4 @@ Set-Content -Encoding UTF8 $robotsPath $robots
 Write-Host "[ASD] robots.txt: Sitemap -> $absMap"
 
 Write-Host "[ASD] Done."
+
