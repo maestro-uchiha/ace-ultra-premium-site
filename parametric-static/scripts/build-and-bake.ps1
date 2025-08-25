@@ -1,8 +1,9 @@
 param([int]$PageSize = 10)
 
-# Load config
+# Load config / helpers (PS 5.1-safe)
 $__here = Split-Path -Parent $PSCommandPath
 . (Join-Path $__here "_lib.ps1")
+
 $__cfg   = Get-ASDConfig
 $__paths = Get-ASDPaths
 
@@ -14,12 +15,8 @@ if (-not (Test-Path $BlogDir)) { Write-Error "blog/ folder not found."; exit 1 }
 
 function Get-PostTitle([string]$path) {
   $raw = Get-Content $path -Raw
-
-  # Skip redirect stubs entirely
-  if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') { return $null }
-
-  $mc = [regex]::Match($raw, '(?is)<!--\s*ASD:CONTENT_START\s*-->(.*?)<!--\s*ASD:CONTENT_END\s*-->')
-  $segment = if ($mc.Success) { $mc.Groups[1].Value } else {
+  $mc = [regex]::Match($raw, '(?is)<!--\s*ASD:(CONTENT|BODY)_START\s*-->(.*?)<!--\s*ASD:(CONTENT|BODY)_END\s*-->')
+  $segment = if ($mc.Success) { $mc.Groups[2].Value } else {
     $mm = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
     if ($mm.Success) { $mm.Groups[1].Value } else { $raw }
   }
@@ -44,11 +41,13 @@ function TryParse-Date([string]$v) {
 
 function Get-MetaDateFromHtml([string]$html) {
   if ([string]::IsNullOrWhiteSpace($html)) { return $null }
+  # <meta name="date" content="YYYY-MM-DD">
   $m = [regex]::Match($html, '(?is)<meta\s+name\s*=\s*["'']date["'']\s+content\s*=\s*["'']([^"''<>]+)["'']')
   if ($m.Success) {
     $dt = TryParse-Date ($m.Groups[1].Value.Trim())
     if ($dt) { return $dt.ToString('yyyy-MM-dd') }
   }
+  # <time datetime="...">
   $t = [regex]::Match($html, '(?is)<time[^>]+datetime\s*=\s*["'']([^"''<>]+)["'']')
   if ($t.Success) {
     $dt = TryParse-Date ($t.Groups[1].Value.Trim())
@@ -57,16 +56,13 @@ function Get-MetaDateFromHtml([string]$html) {
   return $null
 }
 
-# Collect posts with stable date (prefer meta date), skipping redirect stubs
+# Collect posts with stable date (prefer meta date)
 $posts = @()
 Get-ChildItem $BlogDir -Filter *.html -File |
   Where-Object { $_.Name -ne 'index.html' -and $_.Name -notmatch '^page-\d+\.html$' } |
   ForEach-Object {
-    $raw = Get-Content $_.FullName -Raw
-    if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') { return }
-
+    $raw   = Get-Content $_.FullName -Raw
     $title = Get-PostTitle $_.FullName
-    if (-not $title) { return }
 
     $dateStr = Get-MetaDateFromHtml $raw
     $dateDt  = $null
@@ -109,31 +105,29 @@ if ($items.Count -eq 0) {
 "@
   Set-Content -Encoding UTF8 (Join-Path $BlogDir 'index.html') $content
   Write-Host "[paginate] Wrote blog/index.html (empty)"
-  exit 0
-}
+} else {
+  $total = $items.Count
+  $pages = [Math]::Ceiling($total / [double]$PageSize)
 
-$total = $items.Count
-$pages = [Math]::Ceiling($total / [double]$PageSize)
+  for ($i = 1; $i -le $pages; $i++) {
+    $start = ($i - 1) * $PageSize
+    $count = [Math]::Min($PageSize, $total - $start)
+    $slice = $items[$start..($start + $count - 1)]
+    $listHtml = [string]::Join([Environment]::NewLine, $slice)
 
-for ($i = 1; $i -le $pages; $i++) {
-  $start = ($i - 1) * $PageSize
-  $count = [Math]::Min($PageSize, $total - $start)
-  $slice = $items[$start..($start + $count - 1)]
-  $listHtml = [string]::Join([Environment]::NewLine, $slice)
+    $prevHref = if ($i -gt 1) { if ($i -eq 2) { "./" } else { "./page-$($i-1).html" } } else { $null }
+    $nextHref = if ($i -lt $pages) { "./page-$($i+1).html" } else { $null }
 
-  $prevHref = if ($i -gt 1) { if ($i -eq 2) { "./" } else { "./page-$($i-1).html" } } else { $null }
-  $nextHref = if ($i -lt $pages) { "./page-$($i+1).html" } else { $null }
+    $prev = if ($prevHref) { ('<a class="pager-prev" href="{0}">&larr; Newer</a>' -f $prevHref) } else { '' }
+    $next = if ($nextHref) { ('<a class="pager-next" href="{0}">Older &rarr;</a>' -f $nextHref) } else { '' }
 
-  $prev = if ($prevHref) { ('<a class="pager-prev" href="{0}">&larr; Newer</a>' -f $prevHref) } else { '' }
-  $next = if ($nextHref) { ('<a class="pager-next" href="{0}">Older &rarr;</a>' -f $nextHref) } else { '' }
-
-  $nums = @()
-  for ($n = 1; $n -le $pages; $n++) {
-    $href = if ($n -eq 1) { './' } else { "./page-$n.html" }
-    if ($n -eq $i) { $nums += "<strong>$n</strong>" } else { $nums += "<a href=""$href"">$n</a>" }
-  }
-  $numNav = ($nums -join ' ')
-  $pagerHtml = @"
+    $nums = @()
+    for ($n = 1; $n -le $pages; $n++) {
+      $href = if ($n -eq 1) { './' } else { "./page-$n.html" }
+      if ($n -eq $i) { $nums += "<strong>$n</strong>" } else { $nums += "<a href=""$href"">$n</a>" }
+    }
+    $numNav = ($nums -join ' ')
+    $pagerHtml = @"
 <nav class="pager">
   $prev
   <span class="pager-pages">$numNav</span>
@@ -141,9 +135,9 @@ for ($i = 1; $i -le $pages; $i++) {
 </nav>
 "@
 
-  $h1 = if ($pages -gt 1) { "Blog &mdash; Page $i" } else { "Blog" }
+    $h1 = if ($pages -gt 1) { "Blog &mdash; Page $i" } else { "Blog" }
 
-  $content = @"
+    $content = @"
 <!-- ASD:CONTENT_START -->
 <h1>$h1</h1>
 <ul class="posts">
@@ -153,9 +147,15 @@ $pagerHtml
 <!-- ASD:CONTENT_END -->
 "@
 
-  $outName = if ($i -eq 1) { 'index.html' } else { "page-$i.html" }
-  Set-Content -Encoding UTF8 (Join-Path $BlogDir $outName) $content
-  Write-Host ("[paginate] Wrote blog/{0} ({1} items)" -f $outName, $count)
+    $outName = if ($i -eq 1) { 'index.html' } else { "page-$i.html" }
+    Set-Content -Encoding UTF8 (Join-Path $BlogDir $outName) $content
+    Write-Host ("[paginate] Wrote blog/{0} ({1} items)" -f $outName, $count)
+  }
+
+  Write-Host ("[paginate] Done. Pages: {0}, Items: {1}" -f $pages, $total)
 }
 
-Write-Host ("[paginate] Done. Pages: {0}, Items: {1}" -f $pages, $total)
+# ---- NEW: Immediately bake so pagination pages get header/footer + CSS prefix
+$BakePath = Join-Path $__paths.Scripts 'bake.ps1'
+Write-Host "[paginate] Calling bake to wrap pages with layout and fix prefixes…"
+& $BakePath
