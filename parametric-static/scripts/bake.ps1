@@ -8,6 +8,7 @@
    - Rebuilds /blog/ index (basic) while skipping redirect stubs
    - Generates sitemap.xml and preserves robots.txt + appends one Sitemap line
    - Preserves file timestamps so baking doesn't change dates
+   - Trims content block and collapses extra blank lines around <main>
    ============================================ #>
 
 # Load shared helpers
@@ -30,14 +31,14 @@ function Get-MetaDateFromHtml([string]$html) {
   if ([string]::IsNullOrWhiteSpace($html)) { return $null }
 
   # 1) <meta name="date" content="YYYY-MM-DD">
-  $m = [regex]::Match($html, '(?is)<meta\s+name\s*=\s*["'']date["'']\s+content\s*=\s*["'']([^"''<>]+)["'']')
+  $m = [regex]::Match($html, '(?is)<meta\s+name\s*=\s*(?:"|'')date(?:"|'')\s+content\s*=\s*(?:"|'')([^"''<>]+)(?:"|'')')
   if ($m.Success) {
     $dt = TryParse-Date ($m.Groups[1].Value.Trim())
     if ($dt) { return $dt.ToString('yyyy-MM-dd') }
   }
 
   # 2) <time datetime="...">
-  $t = [regex]::Match($html, '(?is)<time[^>]+datetime\s*=\s*["'']([^"''<>]+)["'']')
+  $t = [regex]::Match($html, '(?is)<time[^>]+datetime\s*=\s*(?:"|'')([^"''<>]+)(?:"|'')')
   if ($t.Success) {
     $dt = TryParse-Date ($t.Groups[1].Value.Trim())
     if ($dt) { return $dt.ToString('yyyy-MM-dd') }
@@ -71,14 +72,12 @@ function Normalize-BaseUrlLocal([string]$b) {
   $b = $b -replace '^((?:https?):)/{1,}', '$1//'
   if ($b -match '^(https?://)(.+)$') {
     $scheme = $matches[1]; $rest = $matches[2]
-    # Avoid "https:///host..." by trimming leading slash from the rest
-    $rest = $rest.TrimStart('/')
+    $rest = $rest.TrimStart('/')       # avoid https:///host
     $b = $scheme + $rest
     if (-not $b.EndsWith('/')) { $b += '/' }
     return $b
   } else {
-    # rooted path form (e.g., "/repo/" or "repo")
-    return '/' + $b.Trim('/') + '/'
+    return '/' + $b.Trim('/') + '/'    # rooted path form
   }
 }
 
@@ -94,12 +93,9 @@ function Make-RedirectOutputPath([string]$from, [string]$root) {
   if ([string]::IsNullOrWhiteSpace($from)) { return $null }
   $rel = $from.Trim()
   if ($rel.StartsWith('/')) { $rel = $rel.TrimStart('/') }
-
-  # If it's a folder (no .html extension), use index.html inside it.
   if (-not ($rel -match '\.html?$')) {
     if ($rel.EndsWith('/')) { $rel = $rel + 'index.html' } else { $rel = $rel + '/index.html' }
   }
-
   $out = Join-Path $root $rel
   $dir = Split-Path $out -Parent
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -118,16 +114,14 @@ function JsString([string]$s) {
 }
 
 function Write-RedirectStub([string]$outPath, [string]$absUrl, [int]$code) {
-  # Keep very small, meta refresh (instant) + JS replace + fallback link
   $href = HtmlEscape($absUrl)
   $jsu  = JsString($absUrl)
-
   $html = @"
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Redirecting...</title>
+  <title>Redirecting…</title>
   <meta name="robots" content="noindex">
   <meta http-equiv="refresh" content="0;url=$href">
   <script>location.replace('$jsu');</script>
@@ -174,10 +168,7 @@ function Generate-RedirectStubs([string]$redirectsJson, [string]$root, [string]$
   return $count
 }
 
-# Inject a tiny fixer only into 404.html:
-# - Rewrites CSS link(s) to absolute BaseUrl
-# - Rewrites "Home" links to absolute BaseUrl
-# Runs after DOM is parsed (DOMContentLoaded) and is inserted at the end of <body> when possible.
+# --- 404 helpers (absolute CSS + home link) ---
 function Inject-404Fix([string]$html, [string]$absBase) {
   if ([string]::IsNullOrWhiteSpace($absBase)) { return $html }
   $absBase = Normalize-BaseUrlLocal $absBase
@@ -187,7 +178,6 @@ function isAbs(u){return /^[a-z]+:\/\//i.test(u);}
 function abs(u){if(!u)return u;if(isAbs(u))return u;if(u.charAt(0)=='/')return BASE.replace(/\/$/,'')+u;return BASE+u.replace(/^\.\//,'');}
 function fix(){
   try{
-    // Fix stylesheets that are relative (e.g., assets/css/style.css)
     var links=document.querySelectorAll('link[rel="stylesheet"][href]');
     for(var i=0;i<links.length;i++){
       var href=links[i].getAttribute('href')||'';
@@ -195,7 +185,6 @@ function fix(){
     }
   }catch(e){}
   try{
-    // Rewrite common "home" links to absolute BaseUrl
     var sels=['a[data-asd-home]','a[href="index.html"]','a[href="/"]','a[href="/index.html"]'];
     for(var s=0;s<sels.length;s++){
       var list=document.querySelectorAll(sels[s]);
@@ -209,11 +198,68 @@ if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded'
   if ($html -match '(?is)</body>') {
     return [regex]::Replace($html, '(?is)</body>', ($snip + "`r`n</body>"), 1)
   } elseif ($html -match '(?is)</head>') {
-    # Fallback: still attach, but wait for DOMContentLoaded
     return [regex]::Replace($html, '(?is)</head>', ($snip + "`r`n</head>"), 1)
   } else {
     return $html + "`r`n" + $snip
   }
+}
+
+# --- Robots helpers (SEO-safe) ---
+function Upsert-RobotsMeta([string]$html, [string]$value) {
+  if ([string]::IsNullOrWhiteSpace($html)) { return $html }
+  $tag = '<meta name="robots" content="' + $value + '">'
+  $pattern = '(?is)<meta\s+name\s*=\s*(?:"|'')robots(?:"|'')[^>]*>'
+  if ($html -match $pattern) {
+    return [regex]::Replace($html, $pattern, $tag, 1)
+  }
+  if ($html -match '(?is)</head>') {
+    return [regex]::Replace($html, '(?is)</head>', ('  ' + $tag + "`r`n</head>"), 1)
+  }
+  return ($tag + "`r`n" + $html)
+}
+
+function Ensure-RobotsIndexMeta([string]$html) {
+  if ([string]::IsNullOrWhiteSpace($html)) { return $html }
+  if ($html -match '(?is)<meta\s+name\s*=\s*(?:"|'')robots(?:"|'')') { return $html }
+  $tag = '<meta name="robots" content="index,follow">'
+  if ($html -match '(?is)</head>') {
+    return [regex]::Replace($html, '(?is)</head>', ('  ' + $tag + "`r`n</head>"), 1)
+  }
+  return ($tag + "`r`n" + $html)
+}
+
+# --- NEW: Trim content block; collapse extra blank lines around <main> ---
+
+function Trim-OuterWhitespace([string]$s) {
+  if ($null -eq $s) { return '' }
+  $s = [regex]::Replace($s, '^\s+', '')
+  $s = [regex]::Replace($s, '\s+$', '')
+  return $s
+}
+
+# If markers exist, trim the whitespace just INSIDE the markers.
+# Ensures exactly one CRLF padding after START and before END.
+function Normalize-ContentForLayout([string]$s) {
+  if ($null -eq $s) { return '' }
+  $pat = '(?is)(<!--\s*ASD:(?:CONTENT|BODY)_START\s*-->)(.*?)(<!--\s*ASD:(?:CONTENT|BODY)_END\s*-->)'
+  if ([regex]::IsMatch($s, $pat)) {
+    return [regex]::Replace($s, $pat, {
+      param($m)
+      $inner = Trim-OuterWhitespace $m.Groups[2].Value
+      return $m.Groups[1].Value + "`r`n" + $inner + "`r`n" + $m.Groups[3].Value
+    }, 1)
+  }
+  return Trim-OuterWhitespace $s
+}
+
+# Collapse duplicate blank lines immediately before <main> and after </main>
+function Normalize-MainWhitespace([string]$html) {
+  if ([string]::IsNullOrWhiteSpace($html)) { return $html }
+  # Before <main>
+  $html = [regex]::Replace($html, '(?is)\r?\n\s*\r?\n\s*(?=<main\b)', "`r`n")
+  # After </main>
+  $html = [regex]::Replace($html, '(?is)(</main>)\s*(\r?\n\s*){2,}', '$1' + "`r`n")
+  return $html
 }
 
 $paths = Get-ASDPaths
@@ -226,7 +272,6 @@ $BlogDir    = $paths.Blog
 $Brand = $cfg.SiteName
 $Money = $cfg.StoreUrl
 $Desc  = $cfg.Description
-# Normalize BaseUrl aggressively here to avoid malformed scheme/host/path
 $Base  = Normalize-BaseUrlLocal ([string]$cfg.BaseUrl)
 $Year  = (Get-Date).Year
 
@@ -246,7 +291,6 @@ $Layout = Get-Content $LayoutPath -Raw
 $BlogIndex = Join-Path $BlogDir "index.html"
 if (Test-Path $BlogIndex) {
 
-  # Collect post metadata first (skip stubs), then sort by explicit date key
   $entries = New-Object System.Collections.ArrayList
 
   Get-ChildItem -Path $BlogDir -Filter *.html -File |
@@ -257,7 +301,7 @@ if (Test-Path $BlogIndex) {
       # Skip redirect stubs
       if ($html -match '(?is)<!--\s*ASD:REDIRECT\b') { return }
 
-      # Title: prefer <title>, else first <h1>, else filename (then normalize dashes)
+      # Title
       $mTitle = [regex]::Match($html, '(?is)<title>(.*?)</title>')
       if ($mTitle.Success) {
         $title = $mTitle.Groups[1].Value
@@ -267,15 +311,10 @@ if (Test-Path $BlogIndex) {
       }
       $title = Normalize-DashesToPipe $title
 
-      # Date: prefer meta; else file CreationTime (stable, not modified by bake)
+      # Date
       $metaDate = Get-MetaDateFromHtml $html
-      if ($metaDate) {
-        $dateDisplay = $metaDate
-        $sortKey     = TryParse-Date $metaDate
-      } else {
-        $dateDisplay = $_.CreationTime.ToString('yyyy-MM-dd')
-        $sortKey     = $_.CreationTime
-      }
+      if ($metaDate) { $dateDisplay = $metaDate; $sortKey = TryParse-Date $metaDate }
+      else           { $dateDisplay = $_.CreationTime.ToString('yyyy-MM-dd'); $sortKey = $_.CreationTime }
 
       $null = $entries.Add([pscustomobject]@{
         Title     = $title
@@ -285,11 +324,9 @@ if (Test-Path $BlogIndex) {
       })
     }
 
-  # Sort by SortKey (desc), then build list items
   $posts = New-Object System.Collections.Generic.List[string]
   foreach ($e in ($entries | Sort-Object SortKey -Descending)) {
-    $li = ('<li><a href="./{0}">{1}</a><small> | {2}</small></li>' -f $e.Href, $e.Title, $e.DateText)
-    $posts.Add($li)
+    $posts.Add( ('<li><a href="./{0}">{1}</a><small> | {2}</small></li>' -f $e.Href, $e.Title, $e.DateText) )
   }
 
   $bi = Get-Content $BlogIndex -Raw
@@ -309,29 +346,31 @@ $joined
 Get-ChildItem -Path $RootDir -Recurse -File |
   Where-Object { $_.Extension -eq ".html" -and $_.FullName -ne $LayoutPath } |
   ForEach-Object {
-    # Save original timestamps so the bake doesn't change them
+    # Preserve timestamps
     $it = Get-Item $_.FullName
     $origCreateUtc = $it.CreationTimeUtc
     $origWriteUtc  = $it.LastWriteTimeUtc
 
     $raw = Get-Content $_.FullName -Raw
 
-    # Skip wrapping redirect stubs completely (keep them tiny/fast)
+    # Skip redirect stubs
     if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') {
       Write-Host ("[ASD] Skipped wrapping redirect stub: {0}" -f $_.FullName.Substring($RootDir.Length+1))
       return
     }
 
+    # Extract and normalize just the content block
     $content = Extract-Content $raw
+    $content = Normalize-ContentForLayout $content
 
-    # Title: prefer first <h1> in content, fallback to filename
+    # Title: prefer first <h1>, else filename
     $tm = [regex]::Match($content, '(?is)<h1[^>]*>(.*?)</h1>')
     $pageTitle = if ($tm.Success) { $tm.Groups[1].Value } else { $_.BaseName }
 
     # Compute prefix depth
     $prefix = Get-RelPrefix -RootDir $RootDir -FilePath $_.FullName
 
-    # Build final page with markers embedded
+    # Build final page
     $final = $Layout
     $final = $final.Replace('{{CONTENT}}', $content)
     $final = $final.Replace('{{TITLE}}', $pageTitle)
@@ -341,17 +380,27 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $final = $final.Replace('{{YEAR}}', "$Year")
     $final = $final.Replace('{{PREFIX}}', $prefix)
 
-    # Fix absolute-root links and normalize dashes last
+    # Fix links & normalize dashes
     $final = Rewrite-RootLinks $final $prefix
     $final = Normalize-DashesToPipe $final
 
-    # Special-case: 404.html needs absolute CSS + correct "Home" regardless of path depth
+    # NEW: collapse extra blank lines around <main>
+    $final = Normalize-MainWhitespace $final
+
+    # SEO robots:
     $is404 = ([System.IO.Path]::GetFileName($_.FullName)).ToLower() -eq '404.html'
-    if ($is404) { $final = Inject-404Fix $final $Base }
+    if ($is404) {
+      # 404: enforce noindex,follow + fix CSS/Home links
+      $final = Upsert-RobotsMeta $final 'noindex,follow'
+      $final = Inject-404Fix $final $Base
+    } else {
+      # All other pages: ensure index,follow if missing
+      $final = Ensure-RobotsIndexMeta $final
+    }
 
     Set-Content -Encoding UTF8 $_.FullName $final
 
-    # Restore timestamps (preserve original dates)
+    # Restore timestamps
     Preserve-FileTimes $_.FullName $origCreateUtc $origWriteUtc
 
     Write-Host ("[ASD] Wrapped {0} (prefix='{1}')" -f $_.FullName.Substring($RootDir.Length+1), $prefix)
@@ -370,7 +419,6 @@ Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
   } |
   ForEach-Object {
     $raw = Get-Content $_.FullName -Raw
-    # Skip redirect stubs in sitemap
     if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') { return }
 
     $rel = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'
@@ -384,7 +432,6 @@ Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
     }
     $loc = Collapse-DoubleSlashesPreserveSchemeLocal $loc
 
-    # After restoring times, LastWriteTime reflects real content changes
     $last = (Get-Item $_.FullName).LastWriteTime.ToString('yyyy-MM-dd')
     $urls.Add([pscustomobject]@{ loc=$loc; lastmod=$last })
   }

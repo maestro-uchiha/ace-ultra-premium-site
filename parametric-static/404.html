@@ -21,6 +21,7 @@
   <link rel="stylesheet" href="assets/css/style.css">
 
   <link rel="alternate" type="application/rss+xml" title="Ace Ultra Premium Blog" href="feed.xml">
+  <meta name="robots" content="noindex,follow">
 </head>
 <body>
   <header>
@@ -45,120 +46,10 @@
       </ul>
     </nav>
   </header>
-
-  <main>
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+<main>
     <h1>404 - Not Found</h1>
     <p>That page doesn't exist. <a href="index.html">Return home</a>.</p>
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
   </main>
-
 <footer>
   <p>
     <a href="index.html">Home</a> |
@@ -199,7 +90,6 @@ function isAbs(u){return /^[a-z]+:\/\//i.test(u);}
 function abs(u){if(!u)return u;if(isAbs(u))return u;if(u.charAt(0)=='/')return BASE.replace(/\/$/,'')+u;return BASE+u.replace(/^\.\//,'');}
 function fix(){
   try{
-    // Fix stylesheets that are relative (e.g., assets/css/style.css)
     var links=document.querySelectorAll('link[rel="stylesheet"][href]');
     for(var i=0;i<links.length;i++){
       var href=links[i].getAttribute('href')||'';
@@ -207,7 +97,6 @@ function fix(){
     }
   }catch(e){}
   try{
-    // Rewrite common "home" links to absolute BaseUrl
     var sels=['a[data-asd-home]','a[href="index.html"]','a[href="/"]','a[href="/index.html"]'];
     for(var s=0;s<sels.length;s++){
       var list=document.querySelectorAll(sels[s]);

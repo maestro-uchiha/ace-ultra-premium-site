@@ -172,9 +172,9 @@ $pagerHtml
   Write-Host ("[paginate] Done. Pages: {0}, Items: {1}" -f $pages, $total)
 }
 
-# ---- Immediately bake so pages get wrapped with layout and fixed prefixes ----
+# ---- Immediately bake so pages get wrapped with layout and fixed prefixes/SEO ----
 $BakePath = Join-Path $__paths.Scripts 'bake.ps1'
-Write-Host "[paginate] Calling bake to wrap pages with layout and fix prefixes…"
+Write-Host "[paginate] Calling bake to wrap pages with layout, fix prefixes, and apply SEO robots…"
 
 if (-not (Test-Path $BakePath)) {
   Write-Error "bake.ps1 not found at '$BakePath'"; exit 1
