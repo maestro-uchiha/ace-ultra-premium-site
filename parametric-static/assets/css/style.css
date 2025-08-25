@@ -8,6 +8,16 @@
   --primary: #ffcc00;     /* nav link color */
   --link: #0a66ff;        /* body link color */
   --border: #e5e5e5;
+
+  /* New tokens (safe additions) */
+  --accent: #0a66ff;
+  --accent-2: #6aa5ff;
+  --surface: #fafafa;
+  --shadow: 0 6px 24px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.04);
+  --radius: 16px;
+  --radius-sm: 10px;
+  --section-gap: 2.5rem;
+  --section-gap-lg: 4rem;
 }
 
 /* ====== Layout & typography ====== */
@@ -178,6 +188,12 @@ main {
   padding: 2rem 1rem;           /* comfy gutters */
   margin: 0;
 }
+/* Center typical children with a comfortable max width */
+main > * {
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
+}
 @media (max-width: 520px){
   main { padding: 1.25rem 1rem; }
 }
@@ -236,7 +252,8 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 /* Blog list + pager */
 .posts { list-style: none; padding: 0; margin: 1rem 0; }
 .posts li { padding: .6rem 0; border-bottom: 1px dashed #223; }
-.posts li a { font-weight: 600; }
+.posts li a { font-weight: 600; text-decoration: none; }
+.posts li a:hover { text-decoration: underline; }
 .posts small { margin-left: .5rem; opacity: .8; }
 
 .pager {
@@ -251,3 +268,200 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 .pager-pages a { text-decoration: none; font-weight: 600; }
 .pager-pages strong { padding: .1rem .4rem; border: 1px solid #444; border-radius: .25rem; }
 .pager-prev, .pager-next { font-weight: 700; text-decoration: none; }
+
+/* ============================
+   Decorative Additions
+   ============================ */
+
+/* Section spacing */
+main > section { padding: var(--section-gap) 0; }
+main > section.hero { padding: var(--section-gap-lg) 0; }
+
+/* Hero */
+.hero {
+  position: relative;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, #111 0%, #222 40%, #2a2a2a 100%);
+  color: #fff;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.hero h1 {
+  font-size: clamp(1.8rem, 2.5vw + 1rem, 2.6rem);
+  letter-spacing: .2px;
+}
+.hero p { color: #f0f0f0; max-width: 68ch; }
+.hero a { color: #fff; font-weight: 700; }
+.hero a:hover { text-decoration: underline; }
+
+/* Feature grid */
+.features ul {
+  list-style: none; padding: 0; margin: 1rem 0 0 0;
+  display: grid;
+  grid-template-columns: repeat( auto-fit, minmax(220px, 1fr) );
+  gap: 1rem;
+}
+.features li {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+  box-shadow: var(--shadow);
+  transition: transform .18s ease;
+}
+.features li:hover { transform: translateY(-2px); }
+.features strong { display: block; margin-bottom: .25rem; }
+
+/* Highlights (simple card panel) */
+.highlights {
+  background: linear-gradient(180deg, #f9fbff 0%, #ffffff 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.highlights h2 { margin-top: 0; padding-top: .25rem; }
+.highlights p { margin-bottom: 0; }
+
+/* Call to action panel */
+.cta {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #111;
+  color: #fff;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.cta h2 { color: #fff; }
+.cta p { color: #e9e9e9; }
+.cta a {
+  display: inline-block;
+  margin-top: .25rem;
+  padding: .6rem 1rem;
+  border-radius: .6rem;
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(10,102,255,.22);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.cta a:hover, .cta a:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(10,102,255,.28);
+}
+
+/* Cards (generic utility) */
+.card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 1rem;
+}
+
+/* Grid utility */
+.grid {
+  display: grid;
+  gap: 1rem;
+}
+.grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+.grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+.grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 920px){
+  .grid.cols-4 { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 720px){
+  .grid.cols-3, .grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 520px){
+  .grid, .grid.cols-2 { grid-template-columns: 1fr; }
+}
+
+/* Buttons (extras) */
+.btn.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+.btn.ghost {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}
+.btn.link {
+  background: transparent;
+  border: none;
+  color: var(--link);
+  padding: 0;
+}
+
+/* Legal pages */
+main .legal h1 { margin-top: 0; }
+main .legal p, main .legal li { max-width: 75ch; }
+
+/* Subtle hover for blog list */
+.posts li {
+  border-bottom: 1px dashed #dde1ea;
+  transition: background-color .15s ease;
+}
+.posts li:hover { background: #f9fbff; }
+
+/* Blockquotes */
+blockquote {
+  border-left: 4px solid var(--accent);
+  padding: .5rem 1rem;
+  background: #f7fbff;
+  border-radius: .25rem;
+}
+
+/* Badges & small UI */
+.badge {
+  display: inline-block;
+  padding: .125rem .5rem;
+  border-radius: 999px;
+  background: #f1f5ff;
+  color: #0a3ea0;
+  font-weight: 700;
+  font-size: .8rem;
+}
+
+/* Callouts */
+.callout {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: .65rem;
+  padding: 1rem;
+  box-shadow: var(--shadow);
+}
+.callout.info   { border-color: #e0ecff; background: #f7fbff; }
+.callout.warn   { border-color: #ffe7ba; background: #fffaf0; }
+.callout.success{ border-color: #c7f0d9; background: #f3fff7; }
+
+/* Code blocks (inline) */
+code, kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: .95em;
+  background: #f6f6f6;
+  padding: .1rem .35rem;
+  border-radius: .35rem;
+  border: 1px solid var(--border);
+}
+
+/* Link rows (for lists of actions) */
+.link-row {
+  display: inline-flex;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+
+/* Fine-grain spacing helpers */
+.mt-0 { margin-top: 0 !important; }
+.mt-1 { margin-top: .5rem !important; }
+.mt-2 { margin-top: 1rem !important; }
+.mt-3 { margin-top: 1.5rem !important; }
+.mt-4 { margin-top: 2rem !important; }
+.mb-0 { margin-bottom: 0 !important; }
+.mb-1 { margin-bottom: .5rem !important; }
+.mb-2 { margin-bottom: 1rem !important; }
+.mb-3 { margin-bottom: 1.5rem !important; }
+.mb-4 { margin-bottom: 2rem !important; }
