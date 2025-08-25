@@ -275,7 +275,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 
 /* Section spacing */
 main > section { padding: var(--section-gap) 0; }
-main > section.hero { padding: var(--section-gap-lg) 20; }
+main > section.hero { padding: var(--section-gap-lg) 0; }
 
 /* Hero */
 .hero {
@@ -285,6 +285,7 @@ main > section.hero { padding: var(--section-gap-lg) 20; }
   color: #fff;
   box-shadow: var(--shadow);
   overflow: hidden;
+  padding: 20px;
 }
 .hero h1 {
   font-size: clamp(1.8rem, 2.5vw + 1rem, 2.6rem);
