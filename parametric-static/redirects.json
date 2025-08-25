@@ -1,1 +1,8 @@
-﻿
+﻿[
+    {
+        "from":  "/legacy",
+        "to":  "/blog/new-post.html",
+        "code":  301,
+        "disabled":  false
+    }
+]
