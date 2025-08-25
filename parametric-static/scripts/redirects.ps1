@@ -5,6 +5,7 @@ param(
   [switch]$Disable,
   [switch]$Enable,
   [switch]$Remove,
+  [switch]$RebuildStubs,
   [int]$Index = -1,
   [string]$From,
   [string]$To,
@@ -30,9 +31,7 @@ function To-ArrayList { param($x)
   if ($null -eq $x) { return $list }
   if ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) {
     foreach ($i in $x) { [void]$list.Add($i) }
-  } else {
-    [void]$list.Add($x)
-  }
+  } else { [void]$list.Add($x) }
   return $list
 }
 
@@ -42,7 +41,6 @@ function Ensure-ArrayList { param($x)
 }
 
 function Append-Item { param($list, $item)
-  # Rebuilds as ArrayList regardless of input shape; avoids .Add() on PSCustomObject
   $out = New-ArrayList
   foreach ($i in (To-ArrayList $list)) { [void]$out.Add($i) }
   [void]$out.Add($item)
@@ -61,7 +59,7 @@ function Fix-Urlish([string]$s) {
   if ([string]::IsNullOrWhiteSpace($s)) { return $s }
   $s = $s.Trim()
   # Fix single-slash schemes: https:/... -> https://...
-  $s = $s -replace '^((?:https?|HTTP|Http):)/(?=[^/])', '$1//'  # PS 5.1-safe regex
+  $s = $s -replace '^((?:https?|HTTP|Http):)/(?=[^/])', '$1//'
   return $s
 }
 
@@ -70,6 +68,13 @@ function Normalize-Pathish([string]$p) {
   $p = Fix-Urlish $p
   if ($p -match '^(https?://)') { return $p }
   if (-not $p.StartsWith('/')) { $p = '/' + $p }
+  return $p
+}
+
+function Strip-Query([string]$p) {
+  if ([string]::IsNullOrWhiteSpace($p)) { return $p }
+  $ix = $p.IndexOf('?')
+  if ($ix -gt -1) { return $p.Substring(0,$ix) }
   return $p
 }
 
@@ -123,11 +128,71 @@ function Save-Redirects { param($items, [string]$path)
   Write-Host "[redirects] Saved -> $path"
 }
 
+function Get-StubPath {
+  param([string]$fromPath)
+  $rel = Strip-Query $fromPath
+  if ($rel.StartsWith('/')) { $rel = $rel.Substring(1) }
+  if ([string]::IsNullOrWhiteSpace($rel)) { $rel = "index.html" }
+  $fs = Join-Path $Root $rel
+  if ($fs.ToLower().EndsWith(".html")) { return $fs }
+  return (Join-Path $fs "index.html")
+}
+
+function Remove-Stub {
+  param([string]$fromPath)
+  $stub = Get-StubPath $fromPath
+  if (Test-Path $stub) {
+    try { Remove-Item -LiteralPath $stub -Force } catch {}
+  }
+}
+
+function Write-Stub {
+  param([string]$fromPath, [string]$toPath, [int]$code = 301)
+  $final = Normalize-Pathish $toPath
+  $stub  = Get-StubPath $fromPath
+  $dir   = Split-Path -Parent $stub
+  if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+
+  $html = @"
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Redirecting…</title>
+  <meta http-equiv="refresh" content="0; url=$final">
+  <meta name="robots" content="noindex,nofollow">
+  <script>
+    (function(){
+      var u = "$final";
+      try { if (window.location && window.location.replace) { window.location.replace(u); return; } } catch(e) {}
+      window.location.href = u;
+    })();
+  </script>
+  <noscript><meta http-equiv="refresh" content="0; url=$final"></noscript>
+</head>
+<body></body>
+</html>
+"@
+  Set-Content -Encoding UTF8 -LiteralPath $stub $html
+  Write-Host "[redirects] stub -> $stub"
+}
+
 function Validate-Index { param([int]$i, $arr)
   $list  = Ensure-ArrayList $arr
   $count = Get-Count $list
   if ($i -lt 0 -or $i -ge $count) {
     Write-Error "Index out of range. Use -List to see entries." ; exit 1
+  }
+}
+
+function Rebuild-AllStubs {
+  param($items)
+  $items = Ensure-ArrayList $items
+  # First, clear stubs for all entries (avoid stale targets)
+  foreach ($r in $items) { if ($r.from) { Remove-Stub $r.from } }
+  # Then, write stubs only for enabled entries
+  foreach ($r in $items) {
+    if ($r.enabled -and $r.from -and $r.to) { Write-Stub $r.from $r.to $r.code }
   }
 }
 
@@ -147,11 +212,10 @@ if ($Add) {
   if ($Code -notin 301,302,307,308) { $Code = 301 }
 
   $new = [pscustomobject]@{ from=$From; to=$To; code=$Code; enabled=$true }
-
-  # SAFE append without relying on .Add()
   $items = Append-Item $items $new
 
   Save-Redirects -items $items -path $File
+  Write-Stub -fromPath $From -toPath $To -code $Code
   Write-Host "[redirects] added: $From -> $To (code $Code)"
   Write-Host ("[redirects] total: {0}" -f (Get-Count $items))
   exit 0
@@ -175,43 +239,54 @@ if ($List) {
 }
 
 if ($Disable) {
-  $items = Ensure-ArrayList $items
   Validate-Index -i $Index -arr $items
   if ($null -eq $items[$Index].PSObject.Properties['enabled']) {
     Add-Member -InputObject $items[$Index] -NotePropertyName enabled -NotePropertyValue $true -Force | Out-Null
   }
   $items[$Index].enabled = $false
   Save-Redirects -items $items -path $File
+  Remove-Stub $items[$Index].from
   Write-Host ("[redirects] disabled #{0}: {1} -> {2}" -f $Index, $items[$Index].from, $items[$Index].to)
   exit 0
 }
 
 if ($Enable) {
-  $items = Ensure-ArrayList $items
   Validate-Index -i $Index -arr $items
   if ($null -eq $items[$Index].PSObject.Properties['enabled']) {
     Add-Member -InputObject $items[$Index] -NotePropertyName enabled -NotePropertyValue $true -Force | Out-Null
   }
   $items[$Index].enabled = $true
   Save-Redirects -items $items -path $File
+  if ($items[$Index].from -and $items[$Index].to) {
+    Write-Stub $items[$Index].from $items[$Index].to $items[$Index].code
+  }
   Write-Host ("[redirects] enabled #{0}: {1} -> {2}" -f $Index, $items[$Index].from, $items[$Index].to)
   exit 0
 }
 
 if ($Remove) {
-  $items = Ensure-ArrayList $items
   Validate-Index -i $Index -arr $items
   $removed = $items[$Index]
-  # Rebuild without relying on RemoveAt (works even if shape drifted)
+  # rebuild list without the removed item
   $newList = New-ArrayList
   for ($i = 0; $i -lt (Get-Count $items); $i++) {
     if ($i -ne $Index) { [void]$newList.Add($items[$i]) }
   }
   $items = $newList
   Save-Redirects -items $items -path $File
-  if ($removed) { Write-Host ("[redirects] removed #{0}: {1} -> {2}" -f $Index, $removed.from, $removed.to) }
-  else { Write-Host ("[redirects] removed #{0}" -f $Index) }
+  if ($removed -and $removed.from) { Remove-Stub $removed.from }
+  if ($removed) {
+    Write-Host ("[redirects] removed #{0}: {1} -> {2}" -f $Index, $removed.from, $removed.to)
+  } else {
+    Write-Host ("[redirects] removed #{0}" -f $Index)
+  }
   Write-Host ("[redirects] total: {0}" -f (Get-Count $items))
+  exit 0
+}
+
+if ($RebuildStubs) {
+  Rebuild-AllStubs -items $items
+  Write-Host "[redirects] stubs rebuilt."
   exit 0
 }
 
@@ -222,6 +297,7 @@ Usage:
   redirects.ps1 -Disable -Index N
   redirects.ps1 -Enable  -Index N
   redirects.ps1 -Remove  -Index N
+  redirects.ps1 -RebuildStubs
   (optional) -File <path\to\redirects.json>
 "@
 exit 0
