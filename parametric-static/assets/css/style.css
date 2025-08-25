@@ -16,8 +16,15 @@
   --shadow: 0 6px 24px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.04);
   --radius: 16px;
   --radius-sm: 10px;
+
+  /* Section spacing */
   --section-gap: 2.5rem;
   --section-gap-lg: 4rem;
+
+  /* Gutter presets */
+  --gutter-sm: 1rem;
+  --gutter-md: clamp(1.5rem, 5vw, 3rem);
+  --gutter-lg: clamp(2rem, 6vw, 4rem);
 }
 
 /* ====== Layout & typography ====== */
@@ -120,11 +127,9 @@ header h1 a { color: #fff; text-decoration: none; }
 .nav-toggle.is-active { --nav-bar-h: var(--nav-x-bar-h); }
 .nav-toggle.is-active .bar:nth-child(1) {
   transform: translateY(var(--nav-tilt)) rotate(45deg) scale(var(--nav-x-scale));
-  width: 80%;                      /* optional: also narrow the X a bit */
+  width: 80%;
 }
-.nav-toggle.is-active .bar:nth-child(2) {
-  opacity: 0;
-}
+.nav-toggle.is-active .bar:nth-child(2) { opacity: 0; }
 .nav-toggle.is-active .bar:nth-child(3) {
   transform: translateY(calc(-1 * var(--nav-tilt))) rotate(-45deg) scale(var(--nav-x-scale));
   width: 80%;
@@ -182,10 +187,10 @@ footer a { color: #fff; text-decoration: none; font-weight: bold; }
 
 /* ====== Main content (full width) ====== */
 main {
-  flex: 1 0 auto;               /* fill remaining space so footer sits at bottom */
+  flex: 1 0 auto;
   width: 100%;
-  max-width: none;              /* remove centered column cap */
-  padding: 2rem 1rem;           /* comfy gutters */
+  max-width: none;
+  padding: 2rem 1rem;
   margin: 0;
 }
 /* Center typical children with a comfortable max width */
@@ -286,8 +291,9 @@ main > section.hero { padding: var(--section-gap-lg) 0; }
   box-shadow: var(--shadow);
   overflow: hidden;
 
-  /* INCREASED inner padding */
-  padding: clamp(2.5rem, 4vw + 1rem, 5rem) clamp(1.25rem, 2vw + .5rem, 3rem);
+  /* BIGGER inner padding on left/right so text never hugs the edge */
+  padding: clamp(3rem, 6vw, 6rem) var(--gutter-lg);
+  padding-inline: var(--gutter-lg);
 }
 .hero h1 {
   font-size: clamp(1.8rem, 2.5vw + 1rem, 2.6rem);
@@ -322,8 +328,9 @@ main > section.hero { padding: var(--section-gap-lg) 0; }
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 
-  /* INCREASED inner padding */
-  padding: clamp(1.75rem, 2.5vw + .5rem, 3rem);
+  /* increased inner padding */
+  padding: clamp(2rem, 3vw + .5rem, 3.25rem) var(--gutter-md);
+  padding-inline: var(--gutter-md);
 }
 .highlights h2 { margin-top: 0; padding-top: .25rem; }
 .highlights p { margin-bottom: 0; }
@@ -337,8 +344,9 @@ main > section.hero { padding: var(--section-gap-lg) 0; }
   text-align: center;
   box-shadow: var(--shadow);
 
-  /* INCREASED inner padding */
-  padding: clamp(2rem, 3vw + .75rem, 3.25rem) clamp(1.25rem, 2vw + .5rem, 2.5rem);
+  /* increased inner padding */
+  padding: clamp(2.25rem, 3.5vw + .75rem, 3.5rem) var(--gutter-lg);
+  padding-inline: var(--gutter-lg);
 }
 .cta h2 { color: #fff; }
 .cta p { color: #e9e9e9; }
@@ -394,7 +402,7 @@ main > section.hero { padding: var(--section-gap-lg) 0; }
 }
 .btn.ghost {
   background: transparent;
-  color: var(--text);
+  color: var(--bg);
   border-color: var(--border);
 }
 .btn.link {
