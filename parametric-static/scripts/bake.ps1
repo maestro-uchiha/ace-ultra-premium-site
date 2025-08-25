@@ -147,20 +147,20 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $final = Rewrite-RootLinks $final $prefix
     $final = Normalize-DashesToPipe $final
 
-    # # --- SPECIAL CASE: 404.html needs a <base href="$Base"> so assets work at any 404 route ---
-    # $relFromRoot = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'
-    # if ($relFromRoot -ieq '404.html') {
-    #   if ($final -notmatch '(?is)<base\b') {
-    #     $baseTag = '<base href="' + $Base + '">'
-    #     # inject right after <head>
-    #     if ($final -match '(?is)<head[^>]*>') {
-    #       $final = [regex]::Replace($final, '(?is)<head[^>]*>', { param($m) $m.Value + "`r`n  " + $baseTag }, 1)
-    #     } else {
-    #       # very unlikely, but just in case
-    #       $final = $baseTag + "`r`n" + $final
-    #     }
-    #   }
-    # }
+    # --- SPECIAL CASE: 404.html needs a <base href="$Base"> so assets work at any 404 route ---
+    $relFromRoot = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'
+    if ($relFromRoot -ieq '404.html') {
+      if ($final -notmatch '(?is)<base\b') {
+        $baseTag = '<base href="' + $Base + '">'
+        # inject right after <head>
+        if ($final -match '(?is)<head[^>]*>') {
+          $final = [regex]::Replace($final, '(?is)<head[^>]*>', { param($m) $m.Value + "`r`n  " + $baseTag }, 1)
+        } else {
+          # very unlikely, but just in case
+          $final = $baseTag
+        }
+      }
+    }
 
     Set-Content -Encoding UTF8 $_.FullName $final
 
