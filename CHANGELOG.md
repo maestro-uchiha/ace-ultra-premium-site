@@ -29,3 +29,31 @@ git push
 
 ### Notes
 - This change applies to new versions going forward.
+
+# Changelog
+
+All notable changes to this project will be documented here.
+
+## [1.2.0] - 2025-08-25
+### Added
+- SEO-safe robots handling:
+  - Default `<meta name="robots" content="index,follow">` injected into normal pages (only if missing).
+  - `404.html` forced to `noindex,follow`.
+  - Redirect stubs remain `noindex`.
+
+### Fixed
+- BaseUrl normalization to prevent `https:/` / `https:///` variants.
+- 404 page pathing: CSS and “Return home” now resolve correctly under nested paths.
+- Extra blank lines around `<main>` removed during bake (content block trim + whitespace collapse).
+- Redirects script robustness (array vs. object, listing/enable/disable/add).
+
+### Improved
+- Blog index pagination uses stable dates:
+  - Prefers `<meta name="date">`, otherwise falls back to file `CreationTime`.
+- Timestamps preserved across bake (no unintended post date changes).
+- Sitemap/robots:
+  - Absolute sitemap URL when BaseUrl is absolute.
+  - robots.txt always has exactly one `Sitemap:` line.
+
+## [1.1.0] - 2025-08-10
+- Initial import of Ace Ultra Premium static site with ASD structure.
