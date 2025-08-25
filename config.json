@@ -1,9 +1,13 @@
 ﻿{
   "SiteName": "Ace Ultra Premium",
-  "Description": "Premium Ace Ultra Premium — quality & value.",
+  "StoreUrl": "https://example.com",
+  "Description": "Premium {{BRAND}} | quality, reliability, trust.",
   "BaseUrl": "https://maestro-uchiha.github.io/ace-ultra-premium-site/",
-  "StoreUrl": "https://acecartstore.com/",
-  "author": {
-    "name": "Maestro"
-  }
+  "EnableTOC": true,
+  "EnableReadingTime": true,
+  "EnablePrevNext": true,
+  "EnableShare": true,
+  "EnableAnchors": true,
+  "EnablePerPostDescription": true,
+  "EnableJSONLD": false
 }

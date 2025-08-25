@@ -9,7 +9,11 @@
    - Generates sitemap.xml and preserves robots.txt + appends one Sitemap line
    - Preserves file timestamps so baking doesn't change dates
    - Trims content block and collapses extra blank lines around <main>
-   - NEW: Inject recent posts into index.html between ASD markers
+   - Homepage: inject recent posts
+   - POSTS: byline + reading time, TOC, heading anchors, breadcrumbs,
+            back-to-blog, prev/next, related, share links, lazy images,
+            external-link hygiene, responsive embeds, per-post description & og:image,
+            optional series banner, Article JSON-LD, copy button for code blocks
    ============================================ #>
 
 # Load shared helpers
@@ -28,23 +32,26 @@ function TryParse-Date([string]$v) {
   if ($ok) { return $out } else { return $null }
 }
 
-function Get-MetaDateFromHtml([string]$html) {
-  if ([string]::IsNullOrWhiteSpace($html)) { return $null }
+function Get-Meta([string]$html, [string]$nameOrProp, [switch]$IsProperty) {
+  if ($IsProperty) {
+    $m = [regex]::Match($html, '(?is)<meta\s+property\s*=\s*(?:"|'')' + [regex]::Escape($nameOrProp) + '(?:"|'')\s+content\s*=\s*(?:"|'')([^"''<>]+)(?:"|'')')
+  } else {
+    $m = [regex]::Match($html, '(?is)<meta\s+name\s*=\s*(?:"|'')' + [regex]::Escape($nameOrProp) + '(?:"|'')\s+content\s*=\s*(?:"|'')([^"''<>]+)(?:"|'')')
+  }
+  if ($m.Success) { return $m.Groups[1].Value.Trim() } else { return $null }
+}
 
-  # 1) <meta name="date" content="YYYY-MM-DD">
-  $m = [regex]::Match($html, '(?is)<meta\s+name\s*=\s*(?:"|'')date(?:"|'')\s+content\s*=\s*(?:"|'')([^"''<>]+)(?:"|'')')
-  if ($m.Success) {
-    $dt = TryParse-Date ($m.Groups[1].Value.Trim())
+function Get-MetaDateFromHtml([string]$html) {
+  $a = Get-Meta $html 'date'
+  if ($a) {
+    $dt = TryParse-Date $a
     if ($dt) { return $dt.ToString('yyyy-MM-dd') }
   }
-
-  # 2) <time datetime="...">
   $t = [regex]::Match($html, '(?is)<time[^>]+datetime\s*=\s*(?:"|'')([^"''<>]+)(?:"|'')')
   if ($t.Success) {
     $dt = TryParse-Date ($t.Groups[1].Value.Trim())
     if ($dt) { return $dt.ToString('yyyy-MM-dd') }
   }
-
   return $null
 }
 
@@ -63,22 +70,19 @@ function Collapse-DoubleSlashesPreserveSchemeLocal([string]$url) {
   return ($url -replace '/{2,}','/')
 }
 
-# --- BaseUrl normalization (prevents https:/ and https:/// variants) ---
 function Normalize-BaseUrlLocal([string]$b) {
   if ([string]::IsNullOrWhiteSpace($b)) { return "/" }
   $b = $b.Trim()
-  # Drop accidental leading slashes before scheme: "/https://..." -> "https://..."
-  $b = $b -replace '^/+(?=https?:)', ''
-  # Ensure exactly two slashes after scheme
+  $b = $b -replace '^/+(?=https?:)', ''          # drop accidental leading slash before scheme
   $b = $b -replace '^((?:https?):)/{1,}', '$1//'
   if ($b -match '^(https?://)(.+)$') {
     $scheme = $matches[1]; $rest = $matches[2]
-    $rest = $rest.TrimStart('/')       # avoid https:///host
+    $rest = $rest.TrimStart('/')                 # avoid https:///host
     $b = $scheme + $rest
     if (-not $b.EndsWith('/')) { $b += '/' }
     return $b
   } else {
-    return '/' + $b.Trim('/') + '/'    # rooted path form
+    return '/' + $b.Trim('/') + '/'
   }
 }
 
@@ -112,6 +116,11 @@ function HtmlEscape([string]$s) {
 function JsString([string]$s) {
   if ($null -eq $s) { return '' }
   return $s.Replace('\','\\').Replace("'", "\'")
+}
+
+function UrlEncode([string]$s) {
+  if ($null -eq $s) { return '' }
+  return [System.Uri]::EscapeDataString($s)
 }
 
 function Write-RedirectStub([string]$outPath, [string]$absUrl, [int]$code) {
@@ -229,7 +238,7 @@ function Ensure-RobotsIndexMeta([string]$html) {
   return ($tag + "`r`n" + $html)
 }
 
-# --- NEW: Trim content block; collapse extra blank lines around <main> ---
+# --- Content whitespace normalization ---
 function Trim-OuterWhitespace([string]$s) {
   if ($null -eq $s) { return '' }
   $s = [regex]::Replace($s, '^\s+', '')
@@ -237,8 +246,6 @@ function Trim-OuterWhitespace([string]$s) {
   return $s
 }
 
-# If markers exist, trim the whitespace just INSIDE the markers.
-# Ensures exactly one CRLF padding after START and before END.
 function Normalize-ContentForLayout([string]$s) {
   if ($null -eq $s) { return '' }
   $pat = '(?is)(<!--\s*ASD:(?:CONTENT|BODY)_START\s*-->)(.*?)(<!--\s*ASD:(?:CONTENT|BODY)_END\s*-->)'
@@ -252,50 +259,33 @@ function Normalize-ContentForLayout([string]$s) {
   return Trim-OuterWhitespace $s
 }
 
-# Collapse duplicate blank lines immediately before <main> and after </main>
 function Normalize-MainWhitespace([string]$html) {
   if ([string]::IsNullOrWhiteSpace($html)) { return $html }
-  # Before <main>
-  $html = [regex]::Replace($html, '(?is)\r?\n\s*\r?\n\s*(?=<main\b)', "`r`n")
-  # After </main>
-  $html = [regex]::Replace($html, '(?is)(</main>)\s*(\r?\n\s*){2,}', '$1' + "`r`n")
+  $html = [regex]::Replace($html, '(?is)\r?\n\s*\r?\n\s*(?=<main\b)', "`r`n")            # before <main>
+  $html = [regex]::Replace($html, '(?is)(</main>)\s*(\r?\n\s*){2,}', '$1' + "`r`n")      # after </main>
   return $html
 }
 
-# --- NEW: Build "Recent Posts" HTML for homepage ---
+# --- Home: Build recent posts ---
 function Build-RecentPostsHtml([string]$blogDir, [int]$max = 5) {
   if (-not (Test-Path $blogDir)) { return '' }
   $entries = @()
-
   Get-ChildItem -Path $blogDir -Filter *.html -File |
     Where-Object { $_.Name -ne 'index.html' -and $_.Name -notmatch '^page-\d+\.html$' } |
     ForEach-Object {
       $raw = Get-Content $_.FullName -Raw
       if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') { return }
-
       $mTitle = [regex]::Match($raw, '(?is)<title>(.*?)</title>')
-      if ($mTitle.Success) {
-        $title = $mTitle.Groups[1].Value
-      } else {
-        $mH1 = [regex]::Match($raw, '(?is)<h1[^>]*>(.*?)</h1>')
-        $title = if ($mH1.Success) { $mH1.Groups[1].Value } else { $_.BaseName }
+      if ($mTitle.Success) { $title = $mTitle.Groups[1].Value } else {
+        $mH1 = [regex]::Match($raw, '(?is)<h1[^>]*>(.*?)</h1>'); $title = if ($mH1.Success){$mH1.Groups[1].Value}else{$_.BaseName}
       }
       $title = Normalize-DashesToPipe $title
-
       $metaDate = Get-MetaDateFromHtml $raw
       if ($metaDate) { $dateDisplay = $metaDate; $sortKey = TryParse-Date $metaDate }
       else           { $dateDisplay = $_.CreationTime.ToString('yyyy-MM-dd'); $sortKey = $_.CreationTime }
-
-      $entries += [pscustomobject]@{
-        Title = $title
-        Href  = ('blog/{0}' -f $_.Name)  # from site root index.html
-        Date  = $dateDisplay
-        Sort  = $sortKey
-      }
+      $entries += [pscustomobject]@{ Title = $title; Href = ('blog/{0}' -f $_.Name); Date = $dateDisplay; Sort = $sortKey }
     }
-
   if ($entries.Count -eq 0) { return '<p class="muted">No posts yet.</p>' }
-
   $items = New-Object System.Collections.Generic.List[string]
   foreach ($e in ($entries | Sort-Object Sort -Descending | Select-Object -First $max)) {
     $items.Add( ('<li><a href="{0}">{1}</a><small> | {2}</small></li>' -f $e.Href, $e.Title, $e.Date) )
@@ -308,7 +298,6 @@ function Inject-RecentPosts-IntoContent([string]$content, [string]$blogDir, [int
   if ([string]::IsNullOrWhiteSpace($content)) { return $content }
   $pat = '(?is)<!--\s*ASD:RECENT_POSTS_START\s*-->.*?<!--\s*ASD:RECENT_POSTS_END\s*-->'
   if (-not [regex]::IsMatch($content, $pat)) { return $content }
-
   $recent = Build-RecentPostsHtml -blogDir $blogDir -max $max
   $replacement = @"
 <!-- ASD:RECENT_POSTS_START -->
@@ -318,6 +307,227 @@ $recent
   return [regex]::Replace($content, $pat, $replacement, 1)
 }
 
+# --- Post helpers ---
+
+function Strip-Html([string]$s) {
+  if ($null -eq $s) { return '' }
+  $s = [regex]::Replace($s, '(?is)<script.*?</script>', '')
+  $s = [regex]::Replace($s, '(?is)<style.*?</style>', '')
+  $s = [regex]::Replace($s, '(?is)<[^>]+>', ' ')
+  $s = [regex]::Replace($s, '\s+', ' ')
+  return $s.Trim()
+}
+
+function Compute-ReadingTimeMinutes([string]$html) {
+  $txt = Strip-Html $html
+  if ([string]::IsNullOrWhiteSpace($txt)) { return 1 }
+  $words = ([regex]::Matches($txt, '\b\w+\b')).Count
+  $mins  = [math]::Ceiling($words / 200.0)
+  if ($mins -lt 1) { $mins = 1 }
+  return [int]$mins
+}
+
+function Build-PostBreadcrumbs([string]$title) {
+  $titleEsc = HtmlEscape $title
+  return '<nav class="breadcrumbs"><a href="/index.html">Home</a> / <a href="/blog/">Blog</a> / <span>' + $titleEsc + '</span></nav>'
+}
+
+# Add IDs + small anchor for h2/h3; collect TOC items
+function Add-HeadingAnchors([string]$html, [ref]$tocItems) {
+  $ids = @{}
+  $toc = New-Object System.Collections.Generic.List[object]
+  $pattern = '(?is)<h([23])(\s[^>]*)?>(.*?)</h\1>'
+  $evaluator = {
+    param($m)
+    $lvl  = $m.Groups[1].Value
+    $attr = $m.Groups[2].Value
+    $inner= $m.Groups[3].Value
+    $id   = $null
+
+    $idMatch = [regex]::Match($attr, '(?i)\sid\s*=\s*["'']([^"'']+)["'']')
+    if ($idMatch.Success) { $id = $idMatch.Groups[1].Value }
+    if (-not $id) {
+      $textOnly = Strip-Html $inner
+      $id = ($textOnly.ToLower() -replace '[^a-z0-9]+','-').Trim('-')
+      if ([string]::IsNullOrWhiteSpace($id)) { $id = 'section-' + [guid]::NewGuid().ToString('N').Substring(0,8) }
+      $base = $id; $n = 1
+      while ($ids.ContainsKey($id)) { $id = $base + '-' + $n; $n++ }
+      $attr = ($attr + ' id="' + $id + '"')
+    }
+    $ids[$id] = $true
+    $toc.Add([pscustomobject]@{ Level=[int]$lvl; Id=$id; Text=(Strip-Html $inner) }) | Out-Null
+    return ('<h{0}{1}>{2}<a class="h-anchor" href="#{3}" aria-label="Link to section">#</a></h{0}>' -f $lvl, $attr, $inner, $id)
+  }
+  $out = [regex]::Replace($html, $pattern, $evaluator)
+  $tocItems.Value = $toc
+  return $out
+}
+
+function Build-TocHtml($tocItems) {
+  if ($null -eq $tocItems -or $tocItems.Count -eq 0) { return '' }
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.AppendLine('<nav class="toc"><div class="toc-title">On this page</div><ul>')
+  foreach ($it in $tocItems) {
+    $cls = if ($it.Level -eq 3) { ' class="toc-sub"' } else { '' }
+    [void]$sb.AppendLine( ('  <li{0}><a href="#{1}">{2}</a></li>' -f $cls, $it.Id, (HtmlEscape $it.Text)) )
+  }
+  [void]$sb.AppendLine('</ul></nav>')
+  return $sb.ToString()
+}
+
+function Insert-AfterFirstH1([string]$content, [string]$insertHtml) {
+  if ([string]::IsNullOrWhiteSpace($insertHtml)) { return $content }
+  return [regex]::Replace($content, '(?is)(</h1>)', ('$1' + "`r`n" + $insertHtml), 1)
+}
+
+function Lazyify-Images([string]$html) {
+  return [regex]::Replace($html, '(?i)<img\b(?![^>]*\bloading=)', '<img loading="lazy" ')
+}
+
+function Wrap-Embeds([string]$html) {
+  $pattern = '(?is)(<iframe\b[^>]*\bsrc\s*=\s*["''](?:https?:)?//(?:www\.)?(?:youtube\.com|youtu\.be|player\.vimeo\.com)[^"''<>]*["''][^>]*></iframe>)'
+  $e = { param($m) return '<div class="video">' + $m.Groups[1].Value + '</div>' }
+  return [regex]::Replace($html, $pattern, $e)
+}
+
+# FIXED: use $baseHost (not $host / $Host)
+function External-Link-Hygiene([string]$html, [string]$base) {
+  $baseHost = $null
+  try { $u = [Uri]$base; $baseHost = $u.Host.ToLower() } catch {}
+  $pattern = '(?is)<a\b([^>]*?)\shref\s*=\s*["''](https?://[^"''<>]+)["'']([^>]*)>'
+  $e = {
+    param($m)
+    $pre = $m.Groups[1].Value
+    $url = $m.Groups[2].Value
+    $post= $m.Groups[3].Value
+    $target = if ($m.Value -match '(?i)\btarget\s*=') { '' } else { ' target="_blank"' }
+    $rel    = if ($m.Value -match '(?i)\brel\s*=')    { '' } else { ' rel="noopener"' }
+    try {
+      $uh = ([Uri]$url).Host.ToLower()
+      if ($baseHost -and $uh -eq $baseHost) { $target = ''; $rel = '' }
+    } catch { }
+    return '<a' + $pre + ' href="' + $url + '"' + $target + $rel + $post + '>'
+  }
+  return [regex]::Replace($html, $pattern, $e)
+}
+
+function Build-ShareRow([string]$absUrl, [string]$title) {
+  $u = UrlEncode $absUrl
+  $t = UrlEncode $title
+  $x = 'https://twitter.com/intent/tweet?url=' + $u + '&text=' + $t
+  $li= 'https://www.linkedin.com/sharing/share-offsite/?url=' + $u
+  $fb= 'https://www.facebook.com/sharer/sharer.php?u=' + $u
+  return '<div class="share-row">Share: <a href="' + $x + '">X/Twitter</a> · <a href="' + $li + '">LinkedIn</a> · <a href="' + $fb + '">Facebook</a></div>'
+}
+
+function Apply-HeadOverrides([string]$html, [string]$desc, [string]$ogImageAbs) {
+  $out = $html
+  if ($desc) {
+    $out = [regex]::Replace($out, '(?is)<meta\s+name\s*=\s*(?:"|'')description(?:"|'')\s+content\s*=\s*(?:"|'')[^"''<>]*(?:"|'')\s*/?>', ('<meta name="description" content="' + (HtmlEscape $desc) + '">'), 1)
+    $out = [regex]::Replace($out, '(?is)<meta\s+property\s*=\s*(?:"|'')og:description(?:"|'')\s+content\s*=\s*(?:"|'')[^"''<>]*(?:"|'')\s*/?>', ('<meta property="og:description" content="' + (HtmlEscape $desc) + '">'), 1)
+  }
+  if ($ogImageAbs) {
+    $out = [regex]::Replace($out, '(?is)<meta\s+property\s*=\s*(?:"|'')og:image(?:"|'')\s+content\s*=\s*(?:"|'')[^"''<>]*(?:"|'')\s*/?>', ('<meta property="og:image" content="' + (HtmlEscape $ogImageAbs) + '">'), 1)
+  }
+  return $out
+}
+
+function Build-JsonLd([string]$headline, [string]$author, [string]$datePub, [string]$dateMod, [string]$absUrl, [string]$imgAbs) {
+  $headline = ($headline -replace '"','\"')
+  $author   = ($author   -replace '"','\"')
+  $imgJson  = if ($imgAbs) { '"image": ["' + $imgAbs + '"],' } else { '' }
+  $json = @"
+<script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "$headline",
+  $imgJson
+  "datePublished": "$datePub",
+  "dateModified": "$dateMod",
+  "author": { "@type": "Person", "name": "$author" },
+  "mainEntityOfPage": { "@type": "WebPage", "@id": "$absUrl" }
+}</script>
+"@
+  return $json
+}
+
+function Inject-IntoHead([string]$html, [string]$snippet) {
+  if ([string]::IsNullOrWhiteSpace($snippet)) { return $html }
+  if ($html -match '(?is)</head>') {
+    return [regex]::Replace($html, '(?is)</head>', ($snippet + "`r`n</head>"), 1)
+  }
+  return $html + "`r`n" + $snippet
+}
+
+function Inject-BottomScript([string]$html, [string]$snippet) {
+  if ([string]::IsNullOrWhiteSpace($snippet)) { return $html }
+  if ($html -match '(?is)</body>') {
+    return [regex]::Replace($html, '(?is)</body>', ($snippet + "`r`n</body>"), 1)
+  }
+  return $html + "`r`n" + $snippet
+}
+
+# Build all-posts index for features (title/date/tags/series/ogimage/desc)
+function Collect-AllPosts($blogDir) {
+  $list = New-Object System.Collections.Generic.List[object]
+  if (-not (Test-Path $blogDir)) { return $list }
+  Get-ChildItem -Path $blogDir -Filter *.html -File |
+    Where-Object { $_.Name -ne "index.html" -and $_.Name -notmatch '^page-\d+\.html$' } |
+    ForEach-Object {
+      $raw = Get-Content $_.FullName -Raw
+      if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') { return }
+      $mTitle = [regex]::Match($raw, '(?is)<title>(.*?)</title>')
+      if ($mTitle.Success) { $title = $mTitle.Groups[1].Value } else {
+        $mH1 = [regex]::Match($raw, '(?is)<h1[^>]*>(.*?)</h1>'); $title = if ($mH1.Success){$mH1.Groups[1].Value}else{$_.BaseName}
+      }
+      $title = Normalize-DashesToPipe $title
+
+      $author = (Get-Meta $raw 'author'); if (-not $author) { $author = 'Maestro' }
+      $date   = Get-MetaDateFromHtml $raw
+      $dateDt = if ($date) { TryParse-Date $date } else { $_.CreationTime }
+      $date   = if ($date) { $date } else { $_.CreationTime.ToString('yyyy-MM-dd') }
+
+      $desc   = Get-Meta $raw 'description'
+      $tags   = Get-Meta $raw 'tags';   $tagsArr = @()
+      if ($tags) { $tagsArr = @($tags.Split(',') | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ -ne '' }) }
+      $series = Get-Meta $raw 'series'
+      $ogimg  = Get-Meta $raw 'og:image' -IsProperty
+
+      $list.Add([pscustomobject]@{
+        Name=$_.Name; Title=$title; Author=$author; DateText=$date; Date=$dateDt;
+        Desc=$desc; Tags=$tagsArr; Series=$series; OgImage=$ogimg
+      }) | Out-Null
+    }
+  return $list
+}
+
+function Find-PrevNext($all, [string]$name) {
+  $sorted = $all | Sort-Object Date -Descending
+  $i = 0; for ($i=0; $i -lt $sorted.Count; $i++){ if ($sorted[$i].Name -eq $name){ break } }
+  $prev = $null; $next = $null
+  if ($i -lt $sorted.Count) {
+    if ($i -gt 0) { $prev = $sorted[$i-1] }
+    if ($i + 1 -lt $sorted.Count) { $next = $sorted[$i+1] }
+  }
+  return @($prev, $next)
+}
+
+function Find-Related($all, [string]$name, $tags, [int]$max=3) {
+  $pool = $all | Where-Object { $_.Name -ne $name }
+  $byTag = @()
+  if ($tags -and $tags.Count -gt 0) {
+    $byTag = $pool | Where-Object {
+      ($_.Tags | ForEach-Object { $tags -contains $_ }) -contains $true
+    }
+  }
+  if ($byTag.Count -eq 0) {
+    return ($pool | Sort-Object Date -Descending | Select-Object -First $max)
+  } else {
+    return ($byTag | Sort-Object Date -Descending | Select-Object -First $max)
+  }
+}
+
+# --- Build ---
 $paths = Get-ASDPaths
 $cfg   = Get-ASDConfig
 
@@ -333,58 +543,23 @@ $Year  = (Get-Date).Year
 
 Write-Host "[ASD] Baking... brand='$Brand' store='$Money' base='$Base'"
 
-# --- Generate redirect stubs from redirects.json (instant redirect) ---
+# Redirect stubs
 $made = Generate-RedirectStubs -redirectsJson $paths.Redirects -root $RootDir -base $Base
 if ($made -gt 0) { Write-Host "[ASD] Redirect stubs generated: $made" }
 
-if (-not (Test-Path $LayoutPath)) {
-  Write-Error "[ASD] layout.html not found at $LayoutPath"
-  exit 1
-}
+if (-not (Test-Path $LayoutPath)) { Write-Error "[ASD] layout.html not found at $LayoutPath"; exit 1 }
 $Layout = Get-Content $LayoutPath -Raw
 
-# ---- Build /blog/ index (stable dates: meta date, else CreationTime) ----
+# Pre-collect posts for features + for /blog index
+$AllPosts = Collect-AllPosts $BlogDir
+
+# Build /blog/ index (stable: meta date else CreationTime)
 $BlogIndex = Join-Path $BlogDir "index.html"
 if (Test-Path $BlogIndex) {
-
-  $entries = New-Object System.Collections.ArrayList
-
-  Get-ChildItem -Path $BlogDir -Filter *.html -File |
-    Where-Object { $_.Name -ne "index.html" } |
-    ForEach-Object {
-      $html  = Get-Content $_.FullName -Raw
-
-      # Skip redirect stubs
-      if ($html -match '(?is)<!--\s*ASD:REDIRECT\b') { return }
-
-      # Title
-      $mTitle = [regex]::Match($html, '(?is)<title>(.*?)</title>')
-      if ($mTitle.Success) {
-        $title = $mTitle.Groups[1].Value
-      } else {
-        $mH1 = [regex]::Match($html, '(?is)<h1[^>]*>(.*?)</h1>')
-        $title = if ($mH1.Success) { $mH1.Groups[1].Value } else { $_.BaseName }
-      }
-      $title = Normalize-DashesToPipe $title
-
-      # Date
-      $metaDate = Get-MetaDateFromHtml $html
-      if ($metaDate) { $dateDisplay = $metaDate; $sortKey = TryParse-Date $metaDate }
-      else           { $dateDisplay = $_.CreationTime.ToString('yyyy-MM-dd'); $sortKey = $_.CreationTime }
-
-      $null = $entries.Add([pscustomobject]@{
-        Title     = $title
-        Href      = $_.Name
-        DateText  = $dateDisplay
-        SortKey   = $sortKey
-      })
-    }
-
   $posts = New-Object System.Collections.Generic.List[string]
-  foreach ($e in ($entries | Sort-Object SortKey -Descending)) {
-    $posts.Add( ('<li><a href="./{0}">{1}</a><small> | {2}</small></li>' -f $e.Href, $e.Title, $e.DateText) )
+  foreach($e in ($AllPosts | Sort-Object Date -Descending)) {
+    $posts.Add( ('<li><a href="./{0}">{1}</a><small> | {2}</small></li>' -f $e.Name, $e.Title, $e.DateText) )
   }
-
   $bi = Get-Content $BlogIndex -Raw
   $joined = [string]::Join([Environment]::NewLine, $posts)
   $pattern = '(?s)<!-- POSTS_START -->.*?<!-- POSTS_END -->'
@@ -398,37 +573,93 @@ $joined
   Write-Host "[ASD] Blog index updated"
 }
 
-# ---- Wrap every HTML (except layout.html) using layout and per-page PREFIX ----
+# Wrap every HTML (except layout.html)
 Get-ChildItem -Path $RootDir -Recurse -File |
   Where-Object { $_.Extension -eq ".html" -and $_.FullName -ne $LayoutPath } |
   ForEach-Object {
-    # Preserve timestamps
     $it = Get-Item $_.FullName
     $origCreateUtc = $it.CreationTimeUtc
     $origWriteUtc  = $it.LastWriteTimeUtc
 
     $raw = Get-Content $_.FullName -Raw
 
-    # Skip redirect stubs
     if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') {
       Write-Host ("[ASD] Skipped wrapping redirect stub: {0}" -f $_.FullName.Substring($RootDir.Length+1))
       return
     }
 
-    # Extract and normalize just the content block
     $content = Extract-Content $raw
     $content = Normalize-ContentForLayout $content
 
-    # SPECIAL: Inject recent posts into homepage marker region
+    # Homepage: inject recent posts
     $isHome = ([System.IO.Path]::GetFileName($_.FullName)).ToLower() -eq 'index.html' -and `
               ([System.IO.Path]::GetDirectoryName($_.FullName)).TrimEnd('\') -eq $RootDir.TrimEnd('\')
-    if ($isHome) {
-      $content = Inject-RecentPosts-IntoContent -content $content -blogDir $BlogDir -max 5
-    }
+    if ($isHome) { $content = Inject-RecentPosts-IntoContent -content $content -blogDir $BlogDir -max 5 }
 
-    # Title: prefer first <h1>, else filename
+    # Detect if this is a top-level blog post file
+    $isPost = ([System.IO.Path]::GetDirectoryName($_.FullName)).TrimEnd('\') -eq $BlogDir.TrimEnd('\') -and `
+              ([System.IO.Path]::GetFileName($_.FullName)).ToLower() -notmatch '^index\.html$|^page-\d+\.html$'
+
+    # Title (from content)
     $tm = [regex]::Match($content, '(?is)<h1[^>]*>(.*?)</h1>')
     $pageTitle = if ($tm.Success) { $tm.Groups[1].Value } else { $_.BaseName }
+    $pageTitle = Normalize-DashesToPipe $pageTitle
+
+    # ----- POST ENHANCEMENTS -----
+    $postMeta = $null
+    $hasCode  = $false
+    if ($isPost) {
+      $thisName = $_.Name
+      $postMeta = ($AllPosts | Where-Object { $_.Name -eq $thisName } | Select-Object -First 1)
+      if ($null -eq $postMeta) {
+        $postMeta = [pscustomobject]@{ Name=$thisName; Title=$pageTitle; Author='Maestro'; DateText=$_.CreationTime.ToString('yyyy-MM-dd'); Date=$_.CreationTime; Desc=$null; Tags=@(); Series=$null; OgImage=$null }
+      }
+
+      # Anchors + TOC
+      $tocItems = $null
+      $content  = Add-HeadingAnchors $content ([ref]$tocItems)
+      $tocHtml  = Build-TocHtml $tocItems
+
+      # Reading time
+      $readMin = Compute-ReadingTimeMinutes $content
+
+      # Breadcrumbs + Byline + TOC (inject after first H1)
+      $crumbs = Build-PostBreadcrumbs $pageTitle
+      $byline = ('<div class="byline"><span class="byline-item">{0}</span><span class="byline-dot">·</span><time datetime="{1}">{1}</time><span class="byline-dot">·</span><span class="byline-read">{2} min read</span></div>' -f (HtmlEscape $postMeta.Author), $postMeta.DateText, $readMin)
+      $seriesHtml = ''
+      if ($postMeta.Series) {
+        $seriesHtml = '<div class="series-banner">Part of the <strong>' + (HtmlEscape $postMeta.Series) + '</strong> series.</div>'
+      }
+      $injectTop = $crumbs + $byline + $seriesHtml + $tocHtml
+      $content   = Insert-AfterFirstH1 $content $injectTop
+
+      # Bottom: Prev/Next + Related + Back to Blog + Share
+      $pn = Find-PrevNext $AllPosts $thisName
+      $prev = $pn[0]; $next = $pn[1]
+      $prevHtml = if ($prev) { '<a class="prev" href="/blog/' + $prev.Name + '">← ' + (HtmlEscape $prev.Title) + '</a>' } else { '' }
+      $nextHtml = if ($next) { '<a class="next" href="/blog/' + $next.Name + '">' + (HtmlEscape $next.Title) + ' →</a>' } else { '' }
+      $postNav  = '<nav class="post-nav">' + $prevHtml + '<span></span>' + $nextHtml + '</nav>'
+
+      $related = Find-Related $AllPosts $thisName $postMeta.Tags 3
+      $relItems = New-Object System.Collections.Generic.List[string]
+      foreach ($r in $related) { $relItems.Add('<li><a href="/blog/' + $r.Name + '">' + (HtmlEscape $r.Title) + '</a><small> | ' + $r.DateText + '</small></li>') }
+      $relList = if ($relItems.Count -gt 0) { '<section class="related"><h2>Related posts</h2><ul class="posts">' + ([string]::Join('', $relItems)) + '</ul></section>' } else { '' }
+
+      $back = '<p class="back-blog"><a href="/blog/">← Back to all posts</a></p>'
+
+      # Share links
+      $absPostUrl = Collapse-DoubleSlashesPreserveSchemeLocal ($Base.TrimEnd('/') + '/blog/' + $thisName)
+      $share = Build-ShareRow $absPostUrl $pageTitle
+
+      $content = $content + "`r`n<hr>`r`n" + $share + $postNav + $relList + $back
+
+      # Hygiene + embeds + lazy images
+      $content = Lazyify-Images $content
+      $content = Wrap-Embeds $content
+      $content = External-Link-Hygiene $content $Base
+
+      if ($content -match '(?is)<pre[^>]*>\s*<code') { $hasCode = $true }
+    }
 
     # Compute prefix depth
     $prefix = Get-RelPrefix -RootDir $RootDir -FilePath $_.FullName
@@ -443,33 +674,66 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $final = $final.Replace('{{YEAR}}', "$Year")
     $final = $final.Replace('{{PREFIX}}', $prefix)
 
-    # Fix links & normalize dashes
+    # Link fixes & dash normalization
     $final = Rewrite-RootLinks $final $prefix
     $final = Normalize-DashesToPipe $final
 
-    # NEW: collapse extra blank lines around <main>
+    # Collapse blanks around <main>
     $final = Normalize-MainWhitespace $final
 
-    # SEO robots:
+    # SEO robots + 404 fix
     $is404 = ([System.IO.Path]::GetFileName($_.FullName)).ToLower() -eq '404.html'
     if ($is404) {
-      # 404: enforce noindex,follow + fix CSS/Home links
       $final = Upsert-RobotsMeta $final 'noindex,follow'
       $final = Inject-404Fix $final $Base
     } else {
-      # All other pages: ensure index,follow if missing
       $final = Ensure-RobotsIndexMeta $final
     }
 
-    Set-Content -Encoding UTF8 $_.FullName $final
+    # Post head overrides & JSON-LD & copy JS
+    if ($isPost -and $postMeta) {
+      # Per-post description/og:image overrides
+      $absImg = $null
+      if ($postMeta.OgImage) {
+        if ($postMeta.OgImage -match '^[a-z]+://') { $absImg = $postMeta.OgImage }
+        elseif ($postMeta.OgImage.StartsWith('/')) { $absImg = Collapse-DoubleSlashesPreserveSchemeLocal ($Base.TrimEnd('/') + $postMeta.OgImage) }
+        else { $absImg = Collapse-DoubleSlashesPreserveSchemeLocal ($Base.TrimEnd('/') + '/' + $postMeta.OgImage) }
+      }
+      $final = Apply-HeadOverrides $final $postMeta.Desc $absImg
 
-    # Restore timestamps
+      # JSON-LD Article
+      $absPostUrl = Collapse-DoubleSlashesPreserveSchemeLocal ($Base.TrimEnd('/') + '/blog/' + $postMeta.Name)
+      $jsonld = Build-JsonLd $pageTitle $postMeta.Author $postMeta.DateText ((Get-Item $_.FullName).LastWriteTime.ToString('yyyy-MM-dd')) $absPostUrl $absImg
+      $final = Inject-IntoHead $final $jsonld
+
+      # Copy button JS (only if code blocks present)
+      if ($hasCode) {
+        $copyJs = @"
+<script>(function(){try{
+  var blocks=document.querySelectorAll('pre>code'); if(!blocks.length) return;
+  for(var i=0;i<blocks.length;i++){
+    var pre=blocks[i].parentNode;
+    pre.style.position='relative';
+    var btn=document.createElement('button');
+    btn.type='button'; btn.className='code-copy'; btn.textContent='Copy';
+    btn.addEventListener('click', (function(c){return function(){
+      try{ var t=c.innerText||c.textContent; navigator.clipboard.writeText(t).then(function(){btn.textContent='Copied!'; setTimeout(function(){btn.textContent='Copy';},1200);}); }catch(e){}
+    };})(blocks[i]));
+    pre.appendChild(btn);
+  }
+}catch(e){}})();</script>
+"@
+        $final = Inject-BottomScript $final $copyJs
+      }
+    }
+
+    Set-Content -Encoding UTF8 $_.FullName $final
     Preserve-FileTimes $_.FullName $origCreateUtc $origWriteUtc
 
     Write-Host ("[ASD] Wrapped {0} (prefix='{1}')" -f $_.FullName.Substring($RootDir.Length+1), $prefix)
   }
 
-# ---- Generate sitemap.xml and preserve robots.txt while appending one Sitemap line ----
+# ---- Generate sitemap.xml & robots.txt ----
 Write-Host "[ASD] Using base URL for sitemap: $Base"
 
 $urls = New-Object System.Collections.Generic.List[object]
@@ -483,9 +747,7 @@ Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
   ForEach-Object {
     $raw = Get-Content $_.FullName -Raw
     if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') { return }
-
     $rel = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'
-
     if ($rel -ieq 'index.html') {
       $loc = $Base
     } elseif ($rel -match '^(.+)/index\.html$') {
@@ -494,12 +756,10 @@ Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
       $loc = ($Base.TrimEnd('/') + '/' + $rel)
     }
     $loc = Collapse-DoubleSlashesPreserveSchemeLocal $loc
-
     $last = (Get-Item $_.FullName).LastWriteTime.ToString('yyyy-MM-dd')
     $urls.Add([pscustomobject]@{ loc=$loc; lastmod=$last })
   }
 
-# sitemap.xml
 $sitemapPath = Join-Path $RootDir 'sitemap.xml'
 $xml = New-Object System.Text.StringBuilder
 [void]$xml.AppendLine('<?xml version="1.0" encoding="UTF-8"?>')
@@ -513,10 +773,7 @@ Write-Host "[ASD] sitemap.xml generated ($($urls.Count) urls)"
 
 # robots.txt: preserve or create default, then write ONE canonical Sitemap line
 $robotsPath = Join-Path $RootDir 'robots.txt'
-
-$robots = if (Test-Path $robotsPath) {
-  Get-Content $robotsPath -Raw
-} else {
+$robots = if (Test-Path $robotsPath) { Get-Content $robotsPath -Raw } else {
 @"
 # Allow trusted search engine bots
 User-agent: Googlebot
@@ -583,21 +840,10 @@ User-agent: *
 Disallow: /
 "@
 }
-
-# Strip any prior Sitemap lines
 $robots = [regex]::Replace($robots, '(?im)^\s*Sitemap:\s*.*\r?\n?', '')
-
-# Build sitemap reference: absolute if Base is absolute; else relative
-if ($Base -match '^[a-z]+://') {
-  $absMap = (New-Object Uri((New-Object Uri($Base)), 'sitemap.xml')).AbsoluteUri
-} else {
-  $absMap = 'sitemap.xml'
-}
-
-# Ensure trailing newline and append the single canonical Sitemap line
+if ($Base -match '^[a-z]+://') { $absMap = (New-Object Uri((New-Object Uri($Base)), 'sitemap.xml')).AbsoluteUri } else { $absMap = 'sitemap.xml' }
 if ($robots -notmatch "\r?\n$") { $robots += "`r`n" }
 $robots += "Sitemap: $absMap`r`n"
-
 Set-Content -Encoding UTF8 $robotsPath $robots
 Write-Host "[ASD] robots.txt: Sitemap -> $absMap"
 
