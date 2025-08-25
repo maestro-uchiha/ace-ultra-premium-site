@@ -29,9 +29,8 @@ function New-ArrayList { New-Object System.Collections.ArrayList }
 function To-ArrayList { param($x)
   $list = New-ArrayList
   if ($null -eq $x) { return $list }
-  if ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) {
-    foreach ($i in $x) { [void]$list.Add($i) }
-  } else { [void]$list.Add($x) }
+  if ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) { foreach ($i in $x) { [void]$list.Add($i) } }
+  else { [void]$list.Add($x) }
   return $list
 }
 
@@ -78,7 +77,7 @@ function Strip-Query([string]$p) {
   return $p
 }
 
-# --- Config helpers (read BaseUrl + compute origin) ---
+# --- Config helpers (read BaseUrl and ensure a trailing slash) ---
 function Read-ASDConfig {
   $cfgPath = Join-Path $Root "parametric-static/config.json"
   if (-not (Test-Path $cfgPath)) { return $null }
@@ -89,23 +88,38 @@ function Read-ASDConfig {
   } catch { return $null }
 }
 
-function Get-BaseOrigin {
+function Get-BaseUrl {
   $cfg = Read-ASDConfig
   if ($null -eq $cfg -or [string]::IsNullOrWhiteSpace($cfg.BaseUrl)) { return "" }
-  try {
-    $u = New-Object System.Uri($cfg.BaseUrl)
-    if ($u -and $u.Scheme -and $u.Authority) { return ($u.Scheme + "://" + $u.Authority) }
-  } catch {}
-  return ""
+  $b = [string]$cfg.BaseUrl
+  # ensure trailing slash
+  if (-not $b.EndsWith('/')) { $b = $b + '/' }
+  return $b
 }
 
-# Return an absolute URL given a possibly-rooted path
+function Join-Url($base, $path) {
+  if ([string]::IsNullOrWhiteSpace($base)) { return $path }
+  $base = $base.TrimEnd('/')
+  $path = [string]$path
+  if ($path.StartsWith('/')) { $path = $path.Substring(1) }
+  return ($base + '/' + $path)
+}
+
+# Return a FINAL ABSOLUTE URL for the stub target.
+# Rules:
+# - If $toPath is absolute (http/https), return as-is (after Fix-Urlish).
+# - Otherwise, prepend config BaseUrl (which may include a repo subpath for GH Pages).
 function Make-AbsoluteUrl([string]$toPath) {
-  $toPath = Normalize-Pathish $toPath
+  $toPath = Fix-Urlish $toPath
   if ($toPath -match '^(https?://)') { return $toPath }
-  $origin = Get-BaseOrigin
-  if ([string]::IsNullOrWhiteSpace($origin)) { return $toPath } # fallback
-  return ($origin + $toPath)
+  $base = Get-BaseUrl
+  if ([string]::IsNullOrWhiteSpace($base)) {
+    # Fallback: treat rooted as-is
+    return (Normalize-Pathish $toPath)
+  }
+  # If the user gave "/blog/new.html", glue to BaseUrl path ONLY once
+  if ($toPath.StartsWith('/')) { return (Join-Url $base $toPath) }
+  return (Join-Url $base ('/' + $toPath))
 }
 
 function Migrate-Entry { param($r)
@@ -126,7 +140,7 @@ function Migrate-Entry { param($r)
 
   # sanitize from/to
   if ($r.PSObject.Properties.Match('from').Count -gt 0 -and $r.from) { $r.from = Normalize-Pathish ([string]$r.from) }
-  if ($r.PSObject.Properties.Match('to').Count   -gt 0 -and $r.to)   { $r.to   = Normalize-Pathish ([string]$r.to)   }
+  if ($r.PSObject.Properties.Match('to').Count   -gt 0 -and $r.to)   { $r.to   = Fix-Urlish ([string]$r.to) } # don't force leading slash here; Make-AbsoluteUrl handles both
   return $r
 }
 
@@ -178,7 +192,7 @@ function Remove-Stub {
 
 function Write-Stub {
   param([string]$fromPath, [string]$toPath, [int]$code = 301)
-  $absolute = Make-AbsoluteUrl $toPath   # <— always absolute now
+  $absolute = Make-AbsoluteUrl $toPath   # <— now uses BaseUrl for rooted/relative paths
   $stub  = Get-StubPath $fromPath
   $dir   = Split-Path -Parent $stub
   if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
@@ -234,9 +248,9 @@ if ($Add) {
     Write-Error 'Use -Add -From "/old" -To "/new" or -To "https://domain/path" [-Code 301]' ; exit 1
   }
   $From = Normalize-Pathish $From
-  $To   = Normalize-Pathish $To
+  $To   = Fix-Urlish $To
   if ($From -notmatch '^(\/|https?://)') { Write-Error '-From must start with "/" or "http(s)://".' ; exit 1 }
-  if ($To   -notmatch '^(\/|https?://)') { Write-Error '-To must start with "/" or "http(s)://".'   ; exit 1 }
+  if (($To -notmatch '^(\/|https?://)') -and ($To -notmatch '^[^/].*')) { Write-Error '-To must be rooted ("/x") or absolute ("http(s)://") or relative ("x").' ; exit 1 }
   if ($Code -notin 301,302,307,308) { $Code = 301 }
 
   $new = [pscustomobject]@{ from=$From; to=$To; code=$Code; enabled=$true }
@@ -295,7 +309,6 @@ if ($Enable) {
 if ($Remove) {
   Validate-Index -i $Index -arr $items
   $removed = $items[$Index]
-  # rebuild list without the removed item
   $newList = New-ArrayList
   for ($i = 0; $i -lt (Get-Count $items); $i++) {
     if ($i -ne $Index) { [void]$newList.Add($items[$i]) }
