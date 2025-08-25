@@ -7,6 +7,7 @@
    - Normalizes dashes to "|"
    - Rebuilds /blog/ index (basic) while skipping redirect stubs
    - Generates sitemap.xml and preserves robots.txt + appends one Sitemap line
+   - Generates RSS feed.xml (well-formed, absolute links)
    - Preserves file timestamps so baking doesn't change dates
    - Trims content block and collapses extra blank lines around <main>
    - Homepage: inject recent posts
@@ -111,7 +112,7 @@ function Make-RedirectOutputPath([string]$from, [string]$root) {
 
 function HtmlEscape([string]$s) {
   if ($null -eq $s) { return '' }
-  $s = $s.Replace('&','&amp;').Replace('<','&lt;').Replace('>','&gt;').Replace('"','&quot;')
+  $s = $s.Replace('&','&amp;').Replace('<','&lt;').Replace('>','&gt;').Replace('"','&quot;').Replace("'","&apos;")
   return $s
 }
 
@@ -126,8 +127,8 @@ function UrlEncode([string]$s) {
 }
 
 function Write-RedirectStub([string]$outPath, [string]$absUrl, [int]$code) {
-  $href = HtmlEscape($absUrl)
-  $jsu  = JsString($absUrl)
+  $href = HtmlEscape $absUrl
+  $jsu  = JsString $absUrl
   $html = @"
 <!doctype html>
 <html lang="en">
@@ -310,7 +311,6 @@ $recent
 }
 
 # --- Post helpers ---
-
 function Strip-Html([string]$s) {
   if ($null -eq $s) { return '' }
   $s = [regex]::Replace($s, '(?is)<script.*?</script>', '')
@@ -480,15 +480,11 @@ function Build-JsonLd([string]$headline, [string]$author, [string]$datePub, [str
   return $json
 }
 
-function Strip-JsonLdMarkers([string]$html) {
-  return [regex]::Replace($html, '(?is)<!--\s*ASD:JSONLD_START\s*-->.*?<!--\s*ASD:JSONLD_END\s*-->', '', 1)
-}
+function Strip-JsonLdMarkers([string]$html) { return [regex]::Replace($html, '(?is)<!--\s*ASD:JSONLD_START\s*-->.*?<!--\s*ASD:JSONLD_END\s*-->', '', 1) }
 
 function Inject-IntoHead([string]$html, [string]$snippet) {
   if ([string]::IsNullOrWhiteSpace($snippet)) { return $html }
-  if ($html -match '(?is)</head>') {
-    return [regex]::Replace($html, '(?is)</head>', ($snippet + "`r`n</head>"), 1)
-  }
+  if ($html -match '(?is)</head>') { return [regex]::Replace($html, '(?is)</head>', ($snippet + "`r`n</head>"), 1) }
   return $html + "`r`n" + $snippet
 }
 
@@ -560,6 +556,58 @@ function Find-Related($all, [string]$name, $tags, [int]$max=3) {
   } else {
     return ($byTag | Sort-Object Date -Descending | Select-Object -First $max)
   }
+}
+
+# --- RSS helpers ---
+function Rfc1123([datetime]$dt) {
+  if ($null -eq $dt) { $dt = Get-Date }
+  return $dt.ToUniversalTime().ToString('r')  # e.g., Mon, 25 Aug 2025 19:08:00 GMT
+}
+
+function Build-Rss([object[]]$posts, [string]$base, [string]$title, [string]$desc, [string]$outPath, [int]$maxItems = 20) {
+  $base = Normalize-BaseUrlLocal $base
+  $chTitle = HtmlEscape $title
+  $chDesc  = HtmlEscape $desc
+  $chLink  = $base  # already normalized (absolute or rooted)
+  $chLinkEsc = HtmlEscape $chLink
+  $selfHref = if ($base -match '^[a-z]+://') { (New-Object Uri((New-Object Uri($base)), 'feed.xml')).AbsoluteUri } else { ($base.TrimEnd('/') + '/feed.xml') }
+
+  $lines = New-Object System.Collections.Generic.List[string]
+  $lines.Add('<?xml version="1.0" encoding="UTF-8"?>') | Out-Null
+  $lines.Add('<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">') | Out-Null
+  $lines.Add('  <channel>') | Out-Null
+  $lines.Add('    <title>' + $chTitle + '</title>') | Out-Null
+  $lines.Add('    <link>' + $chLinkEsc + '</link>') | Out-Null
+  $lines.Add('    <description>' + $chDesc + '</description>') | Out-Null
+  $lines.Add('    <generator>ASD</generator>') | Out-Null
+  $lines.Add('    <lastBuildDate>' + (Rfc1123 (Get-Date)) + '</lastBuildDate>') | Out-Null
+  $lines.Add('    <atom:link href="' + (HtmlEscape $selfHref) + '" rel="self" type="application/rss+xml" />') | Out-Null
+
+  $i = 0
+  foreach ($p in ($posts | Sort-Object Date -Descending)) {
+    if ($i -ge $maxItems) { break }
+    $i++
+
+    $itemTitle = HtmlEscape $p.Title
+    $itemLink  = Collapse-DoubleSlashesPreserveSchemeLocal ($base.TrimEnd('/') + '/blog/' + $p.Name)
+    $pub       = if ($p.Date -is [datetime]) { Rfc1123 $p.Date } else { Rfc1123 (TryParse-Date $p.DateText) }
+    $guid      = $itemLink
+
+    $lines.Add('    <item>') | Out-Null
+    $lines.Add('      <title>' + $itemTitle + '</title>') | Out-Null
+    $lines.Add('      <link>' + (HtmlEscape $itemLink) + '</link>') | Out-Null
+    $lines.Add('      <guid isPermaLink="true">' + (HtmlEscape $guid) + '</guid>') | Out-Null
+    $lines.Add('      <pubDate>' + $pub + '</pubDate>') | Out-Null
+    if ($p.Desc) {
+      $lines.Add('      <description>' + (HtmlEscape $p.Desc) + '</description>') | Out-Null
+    }
+    $lines.Add('    </item>') | Out-Null
+  }
+
+  $lines.Add('  </channel>') | Out-Null
+  $lines.Add('</rss>') | Out-Null
+
+  Set-Content -Encoding UTF8 $outPath ($lines -join "`r`n")
 }
 
 # --- Build / Bake ---
@@ -729,9 +777,9 @@ Get-ChildItem -Path $RootDir -Recurse -File |
       # Per-post description/og:image overrides
       $absImg = $null
       if ($postMeta.OgImage) {
-        if ($postMeta.OgImage -match '^[a-z]+://') { $absImg = $postMeta.OgImage }
-        elseif ($postMeta.OgImage.StartsWith('/')) { $absImg = Collapse-DoubleSlashesPreserveSchemeLocal ($Base.TrimEnd('/') + $postMeta.OgImage) }
-        else { $absImg = Collapse-DoubleSlashesPreserveSchemeLocal ($Base.TrimEnd('/') + '/' + $postMeta.OgImage) }
+        if     ($postMeta.OgImage -match '^[a-z]+://') { $absImg = $postMeta.OgImage }
+        elseif ($postMeta.OgImage.StartsWith('/'))     { $absImg = Collapse-DoubleSlashesPreserveSchemeLocal ($Base.TrimEnd('/') + $postMeta.OgImage) }
+        else                                           { $absImg = Collapse-DoubleSlashesPreserveSchemeLocal ($Base.TrimEnd('/') + '/' + $postMeta.OgImage) }
       }
       $final = Apply-HeadOverrides $final $postMeta.Desc $absImg
 
@@ -769,7 +817,7 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     Write-Host ("[ASD] Wrapped {0} (prefix='{1}')" -f $_.FullName.Substring($RootDir.Length+1), $prefix)
   }
 
-# ---- Generate sitemap.xml & robots.txt ----
+# ---- Generate sitemap.xml ----
 Write-Host "[ASD] Using base URL for sitemap: $Base"
 
 $urls = New-Object System.Collections.Generic.List[object]
@@ -806,6 +854,11 @@ foreach($u in $urls | Sort-Object loc){
 [void]$xml.AppendLine('</urlset>')
 Set-Content -Encoding UTF8 $sitemapPath $xml.ToString()
 Write-Host "[ASD] sitemap.xml generated ($($urls.Count) urls)"
+
+# ---- Generate RSS feed.xml (well-formed) ----
+$feedPath = Join-Path $RootDir 'feed.xml'
+Build-Rss -posts $AllPosts -base $Base -title $Brand -desc $Desc -outPath $feedPath -maxItems 20
+Write-Host "[ASD] feed.xml generated ($([Math]::Min(20, ($AllPosts | Measure-Object).Count)) items)"
 
 # robots.txt: preserve/create, then single canonical Sitemap line
 $robotsPath = Join-Path $RootDir 'robots.txt'
