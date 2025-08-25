@@ -1,13 +1,13 @@
 <# ============================================
    Amaterasu Static Deploy (ASD) - bake.ps1
    - Uses config.json as the single source of truth
-   - Wraps HTML with layout.html and {{PREFIX}}
+   - Generates instant redirect stubs from redirects.json
+   - Wraps HTML with layout.html and {{PREFIX}} (except redirect stubs)
    - Rewrites root-absolute links -> prefix-relative
    - Normalizes dashes to "|"
-   - Rebuilds /blog/ index (basic)
+   - Rebuilds /blog/ index (basic) while skipping redirect stubs
    - Generates sitemap.xml and preserves robots.txt + appends one Sitemap line
    - Preserves file timestamps so baking doesn't change dates
-   - Special-case 404.html: inject <base href="$Base"> so assets work at any route
    ============================================ #>
 
 # Load shared helpers
@@ -51,6 +51,123 @@ function Preserve-FileTimes($path, [datetime]$origCreateUtc, [datetime]$origWrit
   try { (Get-Item $path).LastWriteTimeUtc = $origWriteUtc  } catch {}
 }
 
+function Collapse-DoubleSlashesPreserveSchemeLocal([string]$url) {
+  if ([string]::IsNullOrWhiteSpace($url)) { return $url }
+  if ($url -match '^(https?://)(.*)$') {
+    $scheme = $matches[1]
+    $rest   = $matches[2] -replace '/{2,}','/'
+    return $scheme + $rest
+  }
+  return ($url -replace '/{2,}','/')
+}
+
+function Resolve-RedirectTarget([string]$to, [string]$base) {
+  if ([string]::IsNullOrWhiteSpace($to)) { return $base }
+  $to = $to.Trim()
+  if ($to -match '^[a-z]+://') {
+    return Collapse-DoubleSlashesPreserveSchemeLocal($to)
+  }
+  if ($to.StartsWith('/')) {
+    return Collapse-DoubleSlashesPreserveSchemeLocal(($base.TrimEnd('/') + $to))
+  }
+  # relative path -> root relative under $base
+  return Collapse-DoubleSlashesPreserveSchemeLocal(($base.TrimEnd('/') + '/' + $to))
+}
+
+function Make-RedirectOutputPath([string]$from, [string]$root) {
+  if ([string]::IsNullOrWhiteSpace($from)) { return $null }
+  $rel = $from.Trim()
+  if ($rel.StartsWith('/')) { $rel = $rel.TrimStart('/') }
+
+  # If it's a folder (no .html extension), use index.html inside it.
+  if (-not ($rel -match '\.html?$')) {
+    if ($rel.EndsWith('/')) {
+      $rel = $rel + 'index.html'
+    } else {
+      $rel = $rel + '/index.html'
+    }
+  }
+
+  $out = Join-Path $root $rel
+  $dir = Split-Path $out -Parent
+  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+  return $out
+}
+
+function HtmlEscape([string]$s) {
+  if ($null -eq $s) { return '' }
+  $s = $s.Replace('&','&amp;').Replace('<','&lt;').Replace('>','&gt;').Replace('"','&quot;')
+  return $s
+}
+
+function JsString([string]$s) {
+  if ($null -eq $s) { return '' }
+  return $s.Replace('\','\\').Replace("'", "\'")
+}
+
+function Write-RedirectStub([string]$outPath, [string]$absUrl, [int]$code) {
+  # Keep very small, meta refresh (instant) + JS replace + fallback link
+  $href = HtmlEscape($absUrl)
+  $jsu  = JsString($absUrl)
+
+  $html = @"
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Redirecting…</title>
+  <meta name="robots" content="noindex">
+  <meta http-equiv="refresh" content="0;url=$href">
+  <script>location.replace('$jsu');</script>
+</head>
+<body>
+<!-- ASD:REDIRECT to="$href" code="$code" -->
+  <p>If you are not redirected, <a href="$href">click here</a>.</p>
+</body>
+</html>
+"@
+  Set-Content -Encoding UTF8 $outPath $html
+}
+
+function Generate-RedirectStubs([string]$redirectsJson, [string]$root, [string]$base) {
+  if (-not (Test-Path $redirectsJson)) { return 0 }
+  $items = @()
+  try {
+    $raw = Get-Content $redirectsJson -Raw
+    if (-not [string]::IsNullOrWhiteSpace($raw)) {
+      $items = $raw | ConvertFrom-Json
+    }
+  } catch {
+    Write-Warning "[ASD] redirects.json is invalid; skipping."
+    return 0
+  }
+  if ($null -eq $items) { return 0 }
+  $count = 0
+  foreach ($r in $items) {
+    $enabled = $true
+    if ($r.PSObject.Properties.Name -contains 'enabled') {
+      $enabled = [bool]$r.enabled
+    }
+    if (-not $enabled) { continue }
+
+    $from = $null; $to = $null; $code = 301
+    if ($r.PSObject.Properties.Name -contains 'from') { $from = [string]$r.from }
+    if ($r.PSObject.Properties.Name -contains 'to')   { $to   = [string]$r.to }
+    if ($r.PSObject.Properties.Name -contains 'code') { try { $code = [int]$r.code } catch { $code = 301 } }
+
+    if ([string]::IsNullOrWhiteSpace($from) -or [string]::IsNullOrWhiteSpace($to)) { continue }
+
+    # Only support exact paths (static hosting); skip wildcards like "/*"
+    if ($from -match '\*') { continue }
+
+    $outPath = Make-RedirectOutputPath $from $root
+    $abs     = Resolve-RedirectTarget $to $base
+    Write-RedirectStub $outPath $abs $code
+    $count++
+  }
+  return $count
+}
+
 $paths = Get-ASDPaths
 $cfg   = Get-ASDConfig
 
@@ -65,6 +182,10 @@ $Base  = Ensure-AbsoluteBaseUrl $cfg.BaseUrl
 $Year  = (Get-Date).Year
 
 Write-Host "[ASD] Baking... brand='$Brand' store='$Money' base='$Base'"
+
+# --- Generate redirect stubs from redirects.json (instant redirect) ---
+$made = Generate-RedirectStubs -redirectsJson $paths.Redirects -root $RootDir -base $Base
+if ($made -gt 0) { Write-Host "[ASD] Redirect stubs generated: $made" }
 
 if (-not (Test-Path $LayoutPath)) {
   Write-Error "[ASD] layout.html not found at $LayoutPath"
@@ -81,6 +202,9 @@ if (Test-Path $BlogIndex) {
     Sort-Object LastWriteTime -Descending |
     ForEach-Object {
       $html  = Get-Content $_.FullName -Raw
+
+      # Skip redirect stubs
+      if ($html -match '(?is)<!--\s*ASD:REDIRECT\b') { return }
 
       # Prefer <title>, else first <h1>, else filename
       $mTitle = [regex]::Match($html, '(?is)<title>(.*?)</title>')
@@ -123,7 +247,14 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $origCreateUtc = $it.CreationTimeUtc
     $origWriteUtc  = $it.LastWriteTimeUtc
 
-    $raw     = Get-Content $_.FullName -Raw
+    $raw = Get-Content $_.FullName -Raw
+
+    # Skip wrapping redirect stubs completely (keep them tiny/fast)
+    if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') {
+      Write-Host ("[ASD] Skipped wrapping redirect stub: {0}" -f $_.FullName.Substring($RootDir.Length+1))
+      return
+    }
+
     $content = Extract-Content $raw
 
     # Title: prefer first <h1> in content, fallback to filename
@@ -147,21 +278,6 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $final = Rewrite-RootLinks $final $prefix
     $final = Normalize-DashesToPipe $final
 
-    # # --- SPECIAL CASE: 404.html needs a <base href="$Base"> so assets work at any 404 route ---
-    # $relFromRoot = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'
-    # if ($relFromRoot -ieq '404.html') {
-    #   if ($final -notmatch '(?is)<base\b') {
-    #     $baseTag = '<base href="' + $Base + '">'
-    #     # inject right after <head>
-    #     if ($final -match '(?is)<head[^>]*>') {
-    #       $final = [regex]::Replace($final, '(?is)<head[^>]*>', { param($m) $m.Value + "`r`n  " + $baseTag }, 1)
-    #     } else {
-    #       # very unlikely, but just in case
-    #       $final = $baseTag + "`r`n" + $final
-    #     }
-    #   }
-    # }
-
     Set-Content -Encoding UTF8 $_.FullName $final
 
     # Restore timestamps (preserve original dates)
@@ -182,6 +298,10 @@ Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
     $_.Name -ne '404.html'
   } |
   ForEach-Object {
+    $raw = Get-Content $_.FullName -Raw
+    # Skip redirect stubs in sitemap
+    if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') { return }
+
     $rel = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'
 
     if ($rel -ieq 'index.html') {
@@ -191,7 +311,7 @@ Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
     } else {
       $loc = ($Base.TrimEnd('/') + '/' + $rel)
     }
-    $loc = Collapse-DoubleSlashesPreserveScheme $loc
+    $loc = Collapse-DoubleSlashesPreserveSchemeLocal $loc
 
     # After restoring times, LastWriteTime reflects real content changes
     $last = (Get-Item $_.FullName).LastWriteTime.ToString('yyyy-MM-dd')
@@ -286,14 +406,11 @@ Disallow: /
 # Strip any prior Sitemap lines
 $robots = [regex]::Replace($robots, '(?im)^\s*Sitemap:\s*.*\r?\n?', '')
 
-# Always include Base in the sitemap reference:
-# - If Base is absolute (http/https), produce absolute sitemap URL
-# - If Base is rooted (e.g. /repo/), produce /repo/sitemap.xml
+# Build sitemap reference: absolute if Base is absolute; else relative
 if ($Base -match '^[a-z]+://') {
   $absMap = (New-Object Uri((New-Object Uri($Base)), 'sitemap.xml')).AbsoluteUri
 } else {
-  $absMap = ($Base.TrimEnd('/') + '/sitemap.xml')
-  $absMap = $absMap -replace '/{2,}','/'
+  $absMap = 'sitemap.xml'
 }
 
 # Ensure trailing newline and append the single canonical Sitemap line
