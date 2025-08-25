@@ -294,7 +294,7 @@ main > section.hero { padding: var(--section-gap-lg) 0; }
   /* BIGGER inner padding on left/right so text never hugs the edge */
   padding: clamp(3rem, 6vw, 6rem) var(--gutter-lg);
   padding-inline: var(--gutter-lg);
-  padding-left: 20px !important;
+  padding-left: 40px;
 }
 .hero h1 {
   font-size: clamp(1.8rem, 2.5vw + 1rem, 2.6rem);
