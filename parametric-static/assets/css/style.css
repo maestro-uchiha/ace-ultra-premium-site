@@ -285,7 +285,7 @@ main > section.hero { padding: var(--section-gap-lg) 0; }
   color: #fff;
   box-shadow: var(--shadow);
   overflow: hidden;
-  padding: 20px;
+  padding: 40px !important;
 }
 .hero h1 {
   font-size: clamp(1.8rem, 2.5vw + 1rem, 2.6rem);
