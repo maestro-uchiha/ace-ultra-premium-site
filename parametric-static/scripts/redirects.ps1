@@ -25,37 +25,44 @@ if (-not $File) { $File = $DefaultFile }
 
 function New-ArrayList { New-Object System.Collections.ArrayList }
 
-function To-ArrayList {
-  param($x)
+function To-ArrayList { param($x)
   $list = New-ArrayList
   if ($null -eq $x) { return $list }
-  if ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) {
-    foreach ($i in $x) { [void]$list.Add($i) }
-  } else {
-    [void]$list.Add($x)
-  }
+  if ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) { foreach ($i in $x) { [void]$list.Add($i) } }
+  else { [void]$list.Add($x) }
   return $list
 }
 
-function Ensure-ArrayList {
-  param($x)
+function Ensure-ArrayList { param($x)
   if ($x -is [System.Collections.ArrayList]) { return $x }
   return (To-ArrayList $x)
 }
 
-function Get-Count {
-  param($x)
+function Get-Count { param($x)
   if ($null -eq $x) { return 0 }
   if ($x -is [System.Collections.ICollection]) { return $x.Count }
   if ($x -is [System.Array]) { return $x.Length }
-  if ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) {
-    $n = 0; foreach ($i in $x) { $n++ }; return $n
-  }
+  if ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) { $n=0; foreach($i in $x){$n++}; return $n }
   return 1
 }
 
-function Migrate-Entry {
-  param($r)
+function Fix-Urlish([string]$s) {
+  if ([string]::IsNullOrWhiteSpace($s)) { return $s }
+  $s = $s.Trim()
+  # Fix single-slash schemes: https:/... -> https://...
+  $s = $s -replace '^((?:https?|HTTP|Http):)/(?=[^/])', '$1//'  # PS 5.1-safe regex
+  return $s
+}
+
+function Normalize-Pathish([string]$p) {
+  if ([string]::IsNullOrWhiteSpace($p)) { return $p }
+  $p = Fix-Urlish $p
+  if ($p -match '^(https?://)') { return $p }
+  if (-not $p.StartsWith('/')) { $p = '/' + $p }
+  return $p
+}
+
+function Migrate-Entry { param($r)
   if ($null -eq $r) { return $r }
   # old -> new: disabled => enabled
   if ($r.PSObject.Properties.Name -contains 'disabled' -and -not ($r.PSObject.Properties.Name -contains 'enabled')) {
@@ -70,19 +77,14 @@ function Migrate-Entry {
   if (-not ($r.PSObject.Properties.Name -contains 'code')) {
     Add-Member -InputObject $r -NotePropertyName code -NotePropertyValue 301 -Force | Out-Null
   }
+
+  # NEW: sanitize from/to strings
+  if ($r.PSObject.Properties.Match('from').Count -gt 0 -and $r.from) { $r.from = Normalize-Pathish ([string]$r.from) }
+  if ($r.PSObject.Properties.Match('to').Count   -gt 0 -and $r.to)   { $r.to   = Normalize-Pathish ([string]$r.to)   }
   return $r
 }
 
-function Normalize-Pathish([string]$p) {
-  if ([string]::IsNullOrWhiteSpace($p)) { return $p }
-  $p = $p.Trim()
-  if ($p -match '^(https?://)') { return $p }
-  if (-not $p.StartsWith('/')) { $p = '/' + $p }
-  return $p
-}
-
-function Load-Redirects {
-  param([string]$path)
+function Load-Redirects { param([string]$path)
   if (-not (Test-Path $path)) { return (New-ArrayList) }
   try {
     $raw = Get-Content $path -Raw
@@ -100,20 +102,17 @@ function Load-Redirects {
   }
 }
 
-function Save-Redirects {
-  param($items, [string]$path)
+function Save-Redirects { param($items, [string]$path)
   $items = Ensure-ArrayList $items
   $dir = Split-Path -Parent $path
   if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-  $ary = @()
-  foreach ($i in $items) { $ary += ,$i }  # force array, keep order
+  $ary = @(); foreach ($i in $items) { $ary += ,$i }  # force array, keep order
   $json = ConvertTo-Json -InputObject $ary -Depth 6
   Set-Content -Encoding UTF8 $path $json
   Write-Host "[redirects] Saved -> $path"
 }
 
-function Validate-Index {
-  param([int]$i, $arr)
+function Validate-Index { param([int]$i, $arr)
   $list  = Ensure-ArrayList $arr
   $count = Get-Count $list
   if ($i -lt 0 -or $i -ge $count) {
@@ -136,12 +135,7 @@ if ($Add) {
   if ($To   -notmatch '^(\/|https?://)') { Write-Error '-To must start with "/" or "http(s)://".'   ; exit 1 }
   if ($Code -notin 301,302,307,308) { $Code = 301 }
 
-  $new = [pscustomobject]@{
-    from    = $From
-    to      = $To
-    code    = $Code
-    enabled = $true
-  }
+  $new = [pscustomobject]@{ from=$From; to=$To; code=$Code; enabled=$true }
   $items = Ensure-ArrayList $items
   [void]$items.Add($new)
 
@@ -156,7 +150,6 @@ if ($List) {
   $items = Ensure-ArrayList $items
   $count = Get-Count $items
   if ($count -eq 0) { Write-Host "  (none)"; exit 0 }
-
   for ($i = 0; $i -lt $count; $i++) {
     $r = $items[$i]
     $state = if ($r.PSObject.Properties.Match('enabled').Count -gt 0 -and $r.enabled -eq $false) { "DISABLED" } else { "ENABLED" }
@@ -199,11 +192,8 @@ if ($Remove) {
   $removed = $items[$Index]
   $items.RemoveAt($Index)
   Save-Redirects -items $items -path $File
-  if ($removed) {
-    Write-Host ("[redirects] removed #{0}: {1} -> {2}" -f $Index, $removed.from, $removed.to)
-  } else {
-    Write-Host ("[redirects] removed #{0}" -f $Index)
-  }
+  if ($removed) { Write-Host ("[redirects] removed #{0}: {1} -> {2}" -f $Index, $removed.from, $removed.to) }
+  else { Write-Host ("[redirects] removed #{0}" -f $Index) }
   Write-Host ("[redirects] total: {0}" -f (Get-Count $items))
   exit 0
 }
