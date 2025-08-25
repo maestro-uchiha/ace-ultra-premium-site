@@ -9,6 +9,7 @@
    - Generates sitemap.xml and preserves robots.txt + appends one Sitemap line
    - Preserves file timestamps so baking doesn't change dates
    - Trims content block and collapses extra blank lines around <main>
+   - NEW: Inject recent posts into index.html between ASD markers
    ============================================ #>
 
 # Load shared helpers
@@ -229,7 +230,6 @@ function Ensure-RobotsIndexMeta([string]$html) {
 }
 
 # --- NEW: Trim content block; collapse extra blank lines around <main> ---
-
 function Trim-OuterWhitespace([string]$s) {
   if ($null -eq $s) { return '' }
   $s = [regex]::Replace($s, '^\s+', '')
@@ -260,6 +260,62 @@ function Normalize-MainWhitespace([string]$html) {
   # After </main>
   $html = [regex]::Replace($html, '(?is)(</main>)\s*(\r?\n\s*){2,}', '$1' + "`r`n")
   return $html
+}
+
+# --- NEW: Build "Recent Posts" HTML for homepage ---
+function Build-RecentPostsHtml([string]$blogDir, [int]$max = 5) {
+  if (-not (Test-Path $blogDir)) { return '' }
+  $entries = @()
+
+  Get-ChildItem -Path $blogDir -Filter *.html -File |
+    Where-Object { $_.Name -ne 'index.html' -and $_.Name -notmatch '^page-\d+\.html$' } |
+    ForEach-Object {
+      $raw = Get-Content $_.FullName -Raw
+      if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') { return }
+
+      $mTitle = [regex]::Match($raw, '(?is)<title>(.*?)</title>')
+      if ($mTitle.Success) {
+        $title = $mTitle.Groups[1].Value
+      } else {
+        $mH1 = [regex]::Match($raw, '(?is)<h1[^>]*>(.*?)</h1>')
+        $title = if ($mH1.Success) { $mH1.Groups[1].Value } else { $_.BaseName }
+      }
+      $title = Normalize-DashesToPipe $title
+
+      $metaDate = Get-MetaDateFromHtml $raw
+      if ($metaDate) { $dateDisplay = $metaDate; $sortKey = TryParse-Date $metaDate }
+      else           { $dateDisplay = $_.CreationTime.ToString('yyyy-MM-dd'); $sortKey = $_.CreationTime }
+
+      $entries += [pscustomobject]@{
+        Title = $title
+        Href  = ('blog/{0}' -f $_.Name)  # from site root index.html
+        Date  = $dateDisplay
+        Sort  = $sortKey
+      }
+    }
+
+  if ($entries.Count -eq 0) { return '<p class="muted">No posts yet.</p>' }
+
+  $items = New-Object System.Collections.Generic.List[string]
+  foreach ($e in ($entries | Sort-Object Sort -Descending | Select-Object -First $max)) {
+    $items.Add( ('<li><a href="{0}">{1}</a><small> | {2}</small></li>' -f $e.Href, $e.Title, $e.Date) )
+  }
+  $listHtml = [string]::Join([Environment]::NewLine, $items)
+  return "<ul class=""posts"">`r`n$listHtml`r`n</ul>"
+}
+
+function Inject-RecentPosts-IntoContent([string]$content, [string]$blogDir, [int]$max = 5) {
+  if ([string]::IsNullOrWhiteSpace($content)) { return $content }
+  $pat = '(?is)<!--\s*ASD:RECENT_POSTS_START\s*-->.*?<!--\s*ASD:RECENT_POSTS_END\s*-->'
+  if (-not [regex]::IsMatch($content, $pat)) { return $content }
+
+  $recent = Build-RecentPostsHtml -blogDir $blogDir -max $max
+  $replacement = @"
+<!-- ASD:RECENT_POSTS_START -->
+$recent
+<!-- ASD:RECENT_POSTS_END -->
+"@
+  return [regex]::Replace($content, $pat, $replacement, 1)
 }
 
 $paths = Get-ASDPaths
@@ -362,6 +418,13 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     # Extract and normalize just the content block
     $content = Extract-Content $raw
     $content = Normalize-ContentForLayout $content
+
+    # SPECIAL: Inject recent posts into homepage marker region
+    $isHome = ([System.IO.Path]::GetFileName($_.FullName)).ToLower() -eq 'index.html' -and `
+              ([System.IO.Path]::GetDirectoryName($_.FullName)).TrimEnd('\') -eq $RootDir.TrimEnd('\')
+    if ($isHome) {
+      $content = Inject-RecentPosts-IntoContent -content $content -blogDir $BlogDir -max 5
+    }
 
     # Title: prefer first <h1>, else filename
     $tm = [regex]::Match($content, '(?is)<h1[^>]*>(.*?)</h1>')
