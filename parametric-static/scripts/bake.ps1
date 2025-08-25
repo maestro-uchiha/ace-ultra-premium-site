@@ -67,7 +67,7 @@ function Normalize-BaseUrlLocal([string]$b) {
   $b = $b.Trim()
   # Drop accidental leading slashes before scheme: "/https://..." -> "https://..."
   $b = $b -replace '^/+(?=https?:)', ''
-  # Force exactly two slashes after scheme
+  # Ensure exactly two slashes after scheme
   $b = $b -replace '^((?:https?):)/{1,}', '$1//'
   if ($b -match '^(https?://)(.+)$') {
     $scheme = $matches[1]; $rest = $matches[2]
@@ -78,21 +78,15 @@ function Normalize-BaseUrlLocal([string]$b) {
     return $b
   } else {
     # rooted path form (e.g., "/repo/" or "repo")
-    $b = '/' + $b.Trim('/') + '/'
-    return $b
+    return '/' + $b.Trim('/') + '/'
   }
 }
 
 function Resolve-RedirectTarget([string]$to, [string]$base) {
   if ([string]::IsNullOrWhiteSpace($to)) { return $base }
   $to = $to.Trim()
-  if ($to -match '^[a-z]+://') {
-    return Collapse-DoubleSlashesPreserveSchemeLocal($to)
-  }
-  if ($to.StartsWith('/')) {
-    return Collapse-DoubleSlashesPreserveSchemeLocal(($base.TrimEnd('/') + $to))
-  }
-  # relative path -> root relative under $base
+  if ($to -match '^[a-z]+://') { return Collapse-DoubleSlashesPreserveSchemeLocal($to) }
+  if ($to.StartsWith('/'))     { return Collapse-DoubleSlashesPreserveSchemeLocal(($base.TrimEnd('/') + $to)) }
   return Collapse-DoubleSlashesPreserveSchemeLocal(($base.TrimEnd('/') + '/' + $to))
 }
 
@@ -103,11 +97,7 @@ function Make-RedirectOutputPath([string]$from, [string]$root) {
 
   # If it's a folder (no .html extension), use index.html inside it.
   if (-not ($rel -match '\.html?$')) {
-    if ($rel.EndsWith('/')) {
-      $rel = $rel + 'index.html'
-    } else {
-      $rel = $rel + '/index.html'
-    }
+    if ($rel.EndsWith('/')) { $rel = $rel + 'index.html' } else { $rel = $rel + '/index.html' }
   }
 
   $out = Join-Path $root $rel
@@ -137,7 +127,7 @@ function Write-RedirectStub([string]$outPath, [string]$absUrl, [int]$code) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Redirecting…</title>
+  <title>Redirecting...</title>
   <meta name="robots" content="noindex">
   <meta http-equiv="refresh" content="0;url=$href">
   <script>location.replace('$jsu');</script>
@@ -156,9 +146,7 @@ function Generate-RedirectStubs([string]$redirectsJson, [string]$root, [string]$
   $items = @()
   try {
     $raw = Get-Content $redirectsJson -Raw
-    if (-not [string]::IsNullOrWhiteSpace($raw)) {
-      $items = $raw | ConvertFrom-Json
-    }
+    if (-not [string]::IsNullOrWhiteSpace($raw)) { $items = $raw | ConvertFrom-Json }
   } catch {
     Write-Warning "[ASD] redirects.json is invalid; skipping."
     return 0
@@ -167,9 +155,7 @@ function Generate-RedirectStubs([string]$redirectsJson, [string]$root, [string]$
   $count = 0
   foreach ($r in $items) {
     $enabled = $true
-    if ($r.PSObject.Properties.Name -contains 'enabled') {
-      $enabled = [bool]$r.enabled
-    }
+    if ($r.PSObject.Properties.Name -contains 'enabled') { $enabled = [bool]$r.enabled }
     if (-not $enabled) { continue }
 
     $from = $null; $to = $null; $code = 301
@@ -178,9 +164,7 @@ function Generate-RedirectStubs([string]$redirectsJson, [string]$root, [string]$
     if ($r.PSObject.Properties.Name -contains 'code') { try { $code = [int]$r.code } catch { $code = 301 } }
 
     if ([string]::IsNullOrWhiteSpace($from) -or [string]::IsNullOrWhiteSpace($to)) { continue }
-
-    # Only support exact paths (static hosting); skip wildcards like "/*"
-    if ($from -match '\*') { continue }
+    if ($from -match '\*') { continue } # no wildcards
 
     $outPath = Make-RedirectOutputPath $from $root
     $abs     = Resolve-RedirectTarget $to $base
@@ -191,15 +175,41 @@ function Generate-RedirectStubs([string]$redirectsJson, [string]$root, [string]$
 }
 
 # Inject a tiny fixer only into 404.html:
-# - Adds an absolute CSS link using BaseUrl
-# - Rewrites any "Home" link (data-asd-home or typical index hrefs) to absolute BaseUrl
+# - Rewrites CSS link(s) to absolute BaseUrl
+# - Rewrites "Home" links to absolute BaseUrl
+# Runs after DOM is parsed (DOMContentLoaded) and is inserted at the end of <body> when possible.
 function Inject-404Fix([string]$html, [string]$absBase) {
   if ([string]::IsNullOrWhiteSpace($absBase)) { return $html }
   $absBase = Normalize-BaseUrlLocal $absBase
   $snip = @"
-<script>(function(){try{var BASE='$absBase';var l=document.createElement('link');l.rel='stylesheet';l.href=BASE+'assets/css/style.css';document.head.appendChild(l);}catch(e){}try{var sels=['a[data-asd-home]','a[href="index.html"]','a[href="/"]','a[href="/index.html"]'];for(var i=0;i<sels.length;i++){var list=document.querySelectorAll(sels[i]);for(var j=0;j<list.length;j++){list[j].setAttribute('href', BASE);}}}catch(e){}})();</script>
+<script>(function(){var BASE='$absBase';
+function isAbs(u){return /^[a-z]+:\/\//i.test(u);}
+function abs(u){if(!u)return u;if(isAbs(u))return u;if(u.charAt(0)=='/')return BASE.replace(/\/$/,'')+u;return BASE+u.replace(/^\.\//,'');}
+function fix(){
+  try{
+    // Fix stylesheets that are relative (e.g., assets/css/style.css)
+    var links=document.querySelectorAll('link[rel="stylesheet"][href]');
+    for(var i=0;i<links.length;i++){
+      var href=links[i].getAttribute('href')||'';
+      if(!isAbs(href)){ links[i].setAttribute('href', abs(href)); }
+    }
+  }catch(e){}
+  try{
+    // Rewrite common "home" links to absolute BaseUrl
+    var sels=['a[data-asd-home]','a[href="index.html"]','a[href="/"]','a[href="/index.html"]'];
+    for(var s=0;s<sels.length;s++){
+      var list=document.querySelectorAll(sels[s]);
+      for(var j=0;j<list.length;j++){ list[j].setAttribute('href', BASE); }
+    }
+  }catch(e){}
+}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',fix);}else{fix();}
+})();</script>
 "@
-  if ($html -match '(?is)</head>') {
+  if ($html -match '(?is)</body>') {
+    return [regex]::Replace($html, '(?is)</body>', ($snip + "`r`n</body>"), 1)
+  } elseif ($html -match '(?is)</head>') {
+    # Fallback: still attach, but wait for DOMContentLoaded
     return [regex]::Replace($html, '(?is)</head>', ($snip + "`r`n</head>"), 1)
   } else {
     return $html + "`r`n" + $snip
