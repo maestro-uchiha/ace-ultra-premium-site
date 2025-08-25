@@ -14,6 +14,7 @@
             back-to-blog, prev/next, related, share links, lazy images,
             external-link hygiene, responsive embeds, per-post description & og:image,
             optional series banner, Article JSON-LD, copy button for code blocks
+   - Idempotent injections via ASD markers to prevent duplicates
    ============================================ #>
 
 # Load shared helpers
@@ -70,14 +71,15 @@ function Collapse-DoubleSlashesPreserveSchemeLocal([string]$url) {
   return ($url -replace '/{2,}','/')
 }
 
+# --- BaseUrl normalization ---
 function Normalize-BaseUrlLocal([string]$b) {
   if ([string]::IsNullOrWhiteSpace($b)) { return "/" }
   $b = $b.Trim()
-  $b = $b -replace '^/+(?=https?:)', ''          # drop accidental leading slash before scheme
+  $b = $b -replace '^/+(?=https?:)', ''      # drop accidental leading slash before scheme
   $b = $b -replace '^((?:https?):)/{1,}', '$1//'
   if ($b -match '^(https?://)(.+)$') {
     $scheme = $matches[1]; $rest = $matches[2]
-    $rest = $rest.TrimStart('/')                 # avoid https:///host
+    $rest = $rest.TrimStart('/')             # avoid https:///host
     $b = $scheme + $rest
     if (-not $b.EndsWith('/')) { $b += '/' }
     return $b
@@ -380,9 +382,34 @@ function Insert-AfterFirstH1([string]$content, [string]$insertHtml) {
   return [regex]::Replace($content, '(?is)(</h1>)', ('$1' + "`r`n" + $insertHtml), 1)
 }
 
-function Lazyify-Images([string]$html) {
-  return [regex]::Replace($html, '(?i)<img\b(?![^>]*\bloading=)', '<img loading="lazy" ')
+# --- NEW: cleanup old duplicates & idempotent upserts ---
+function Remove-OldPostExtras([string]$content) {
+  if ([string]::IsNullOrWhiteSpace($content)) { return $content }
+  # Strip any previous unmarked injections (from earlier bakes)
+  $content = [regex]::Replace($content, '(?is)\s*<nav\s+class="breadcrumbs".*?</nav>\s*', '')
+  $content = [regex]::Replace($content, '(?is)\s*<div\s+class="byline".*?</div>\s*', '')
+  $content = [regex]::Replace($content, '(?is)\s*<div\s+class="series-banner".*?</div>\s*', '')
+  $content = [regex]::Replace($content, '(?is)\s*<nav\s+class="toc".*?</nav>\s*', '')
+  $content = [regex]::Replace($content, '(?is)\s*<hr>\s*(?=<div\s+class="share-row")', '')
+  $content = [regex]::Replace($content, '(?is)\s*<div\s+class="share-row".*?</div>\s*', '')
+  $content = [regex]::Replace($content, '(?is)\s*<nav\s+class="post-nav".*?</nav>\s*', '')
+  $content = [regex]::Replace($content, '(?is)\s*<section\s+class="related".*?</section>\s*', '')
+  $content = [regex]::Replace($content, '(?is)\s*<p\s+class="back-blog".*?</p>\s*', '')
+  return $content
 }
+
+function Upsert-Block([string]$content, [string]$startMarker, [string]$endMarker, [string]$html, [switch]$AppendIfMissing, [switch]$AfterH1) {
+  $wrapped = $startMarker + "`r`n" + $html + "`r`n" + $endMarker
+  $pat = '(?is)' + [regex]::Escape($startMarker) + '.*?' + [regex]::Escape($endMarker)
+  if ([regex]::IsMatch($content, $pat)) {
+    return [regex]::Replace($content, $pat, $wrapped, 1)
+  }
+  if ($AfterH1) { return Insert-AfterFirstH1 $content $wrapped }
+  if ($AppendIfMissing) { return ($content + "`r`n" + $wrapped) }
+  return $content
+}
+
+function Lazyify-Images([string]$html) { return [regex]::Replace($html, '(?i)<img\b(?![^>]*\bloading=)', '<img loading="lazy" ') }
 
 function Wrap-Embeds([string]$html) {
   $pattern = '(?is)(<iframe\b[^>]*\bsrc\s*=\s*["''](?:https?:)?//(?:www\.)?(?:youtube\.com|youtu\.be|player\.vimeo\.com)[^"''<>]*["''][^>]*></iframe>)'
@@ -390,7 +417,7 @@ function Wrap-Embeds([string]$html) {
   return [regex]::Replace($html, $pattern, $e)
 }
 
-# FIXED: use $baseHost (not $host / $Host)
+# FIXED: use $baseHost (not $Host)
 function External-Link-Hygiene([string]$html, [string]$base) {
   $baseHost = $null
   try { $u = [Uri]$base; $baseHost = $u.Host.ToLower() } catch {}
@@ -437,6 +464,7 @@ function Build-JsonLd([string]$headline, [string]$author, [string]$datePub, [str
   $author   = ($author   -replace '"','\"')
   $imgJson  = if ($imgAbs) { '"image": ["' + $imgAbs + '"],' } else { '' }
   $json = @"
+<!-- ASD:JSONLD_START -->
 <script type="application/ld+json">{
   "@context": "https://schema.org",
   "@type": "Article",
@@ -447,8 +475,13 @@ function Build-JsonLd([string]$headline, [string]$author, [string]$datePub, [str
   "author": { "@type": "Person", "name": "$author" },
   "mainEntityOfPage": { "@type": "WebPage", "@id": "$absUrl" }
 }</script>
+<!-- ASD:JSONLD_END -->
 "@
   return $json
+}
+
+function Strip-JsonLdMarkers([string]$html) {
+  return [regex]::Replace($html, '(?is)<!--\s*ASD:JSONLD_START\s*-->.*?<!--\s*ASD:JSONLD_END\s*-->', '', 1)
 }
 
 function Inject-IntoHead([string]$html, [string]$snippet) {
@@ -459,15 +492,17 @@ function Inject-IntoHead([string]$html, [string]$snippet) {
   return $html + "`r`n" + $snippet
 }
 
-function Inject-BottomScript([string]$html, [string]$snippet) {
+function Inject-BottomScript([string]$html, [string]$snippet, [string]$markerName) {
   if ([string]::IsNullOrWhiteSpace($snippet)) { return $html }
-  if ($html -match '(?is)</body>') {
-    return [regex]::Replace($html, '(?is)</body>', ($snippet + "`r`n</body>"), 1)
-  }
-  return $html + "`r`n" + $snippet
+  $start = '<!-- ASD:' + $markerName + '_START -->'
+  $end   = '<!-- ASD:' + $markerName + '_END -->'
+  $wrapped = $start + "`r`n" + $snippet + "`r`n" + $end
+  $pat = '(?is)' + [regex]::Escape($start) + '.*?' + [regex]::Escape($end)
+  if ($html -match $pat) { return [regex]::Replace($html, $pat, $wrapped, 1) }
+  if ($html -match '(?is)</body>') { return [regex]::Replace($html, '(?is)</body>', ($wrapped + "`r`n</body>"), 1) }
+  return $html + "`r`n" + $wrapped
 }
 
-# Build all-posts index for features (title/date/tags/series/ogimage/desc)
 function Collect-AllPosts($blogDir) {
   $list = New-Object System.Collections.Generic.List[object]
   if (-not (Test-Path $blogDir)) { return $list }
@@ -527,7 +562,7 @@ function Find-Related($all, [string]$name, $tags, [int]$max=3) {
   }
 }
 
-# --- Build ---
+# --- Build / Bake ---
 $paths = Get-ASDPaths
 $cfg   = Get-ASDConfig
 
@@ -550,10 +585,10 @@ if ($made -gt 0) { Write-Host "[ASD] Redirect stubs generated: $made" }
 if (-not (Test-Path $LayoutPath)) { Write-Error "[ASD] layout.html not found at $LayoutPath"; exit 1 }
 $Layout = Get-Content $LayoutPath -Raw
 
-# Pre-collect posts for features + for /blog index
+# Pre-collect posts
 $AllPosts = Collect-AllPosts $BlogDir
 
-# Build /blog/ index (stable: meta date else CreationTime)
+# Blog index refresh
 $BlogIndex = Join-Path $BlogDir "index.html"
 if (Test-Path $BlogIndex) {
   $posts = New-Object System.Collections.Generic.List[string]
@@ -596,7 +631,7 @@ Get-ChildItem -Path $RootDir -Recurse -File |
               ([System.IO.Path]::GetDirectoryName($_.FullName)).TrimEnd('\') -eq $RootDir.TrimEnd('\')
     if ($isHome) { $content = Inject-RecentPosts-IntoContent -content $content -blogDir $BlogDir -max 5 }
 
-    # Detect if this is a top-level blog post file
+    # Detect top-level blog post file
     $isPost = ([System.IO.Path]::GetDirectoryName($_.FullName)).TrimEnd('\') -eq $BlogDir.TrimEnd('\') -and `
               ([System.IO.Path]::GetFileName($_.FullName)).ToLower() -notmatch '^index\.html$|^page-\d+\.html$'
 
@@ -609,6 +644,8 @@ Get-ChildItem -Path $RootDir -Recurse -File |
     $postMeta = $null
     $hasCode  = $false
     if ($isPost) {
+      $content = Remove-OldPostExtras $content  # one-time cleanup for old duplicates
+
       $thisName = $_.Name
       $postMeta = ($AllPosts | Where-Object { $_.Name -eq $thisName } | Select-Object -First 1)
       if ($null -eq $postMeta) {
@@ -623,17 +660,14 @@ Get-ChildItem -Path $RootDir -Recurse -File |
       # Reading time
       $readMin = Compute-ReadingTimeMinutes $content
 
-      # Breadcrumbs + Byline + TOC (inject after first H1)
+      # Breadcrumbs + Byline + TOC (idempotent insert after first H1)
       $crumbs = Build-PostBreadcrumbs $pageTitle
       $byline = ('<div class="byline"><span class="byline-item">{0}</span><span class="byline-dot">·</span><time datetime="{1}">{1}</time><span class="byline-dot">·</span><span class="byline-read">{2} min read</span></div>' -f (HtmlEscape $postMeta.Author), $postMeta.DateText, $readMin)
-      $seriesHtml = ''
-      if ($postMeta.Series) {
-        $seriesHtml = '<div class="series-banner">Part of the <strong>' + (HtmlEscape $postMeta.Series) + '</strong> series.</div>'
-      }
-      $injectTop = $crumbs + $byline + $seriesHtml + $tocHtml
-      $content   = Insert-AfterFirstH1 $content $injectTop
+      $seriesHtml = if ($postMeta.Series) { '<div class="series-banner">Part of the <strong>' + (HtmlEscape $postMeta.Series) + '</strong> series.</div>' } else { '' }
+      $topBlock = $crumbs + $byline + $seriesHtml + $tocHtml
+      $content  = Upsert-Block -content $content -startMarker '<!-- ASD:POST_TOP_START -->' -endMarker '<!-- ASD:POST_TOP_END -->' -html $topBlock -AfterH1
 
-      # Bottom: Prev/Next + Related + Back to Blog + Share
+      # Bottom: Prev/Next + Related + Back + Share (idempotent append)
       $pn = Find-PrevNext $AllPosts $thisName
       $prev = $pn[0]; $next = $pn[1]
       $prevHtml = if ($prev) { '<a class="prev" href="/blog/' + $prev.Name + '">← ' + (HtmlEscape $prev.Title) + '</a>' } else { '' }
@@ -647,11 +681,11 @@ Get-ChildItem -Path $RootDir -Recurse -File |
 
       $back = '<p class="back-blog"><a href="/blog/">← Back to all posts</a></p>'
 
-      # Share links
       $absPostUrl = Collapse-DoubleSlashesPreserveSchemeLocal ($Base.TrimEnd('/') + '/blog/' + $thisName)
       $share = Build-ShareRow $absPostUrl $pageTitle
 
-      $content = $content + "`r`n<hr>`r`n" + $share + $postNav + $relList + $back
+      $bottomBlock = '<hr>' + $share + $postNav + $relList + $back
+      $content     = Upsert-Block -content $content -startMarker '<!-- ASD:POST_BOTTOM_START -->' -endMarker '<!-- ASD:POST_BOTTOM_END -->' -html $bottomBlock -AppendIfMissing
 
       # Hygiene + embeds + lazy images
       $content = Lazyify-Images $content
@@ -701,12 +735,13 @@ Get-ChildItem -Path $RootDir -Recurse -File |
       }
       $final = Apply-HeadOverrides $final $postMeta.Desc $absImg
 
-      # JSON-LD Article
+      # JSON-LD Article (idempotent)
       $absPostUrl = Collapse-DoubleSlashesPreserveSchemeLocal ($Base.TrimEnd('/') + '/blog/' + $postMeta.Name)
+      $final = Strip-JsonLdMarkers $final
       $jsonld = Build-JsonLd $pageTitle $postMeta.Author $postMeta.DateText ((Get-Item $_.FullName).LastWriteTime.ToString('yyyy-MM-dd')) $absPostUrl $absImg
       $final = Inject-IntoHead $final $jsonld
 
-      # Copy button JS (only if code blocks present)
+      # Copy button JS (idempotent via marker)
       if ($hasCode) {
         $copyJs = @"
 <script>(function(){try{
@@ -714,6 +749,7 @@ Get-ChildItem -Path $RootDir -Recurse -File |
   for(var i=0;i<blocks.length;i++){
     var pre=blocks[i].parentNode;
     pre.style.position='relative';
+    if(pre.querySelector('button.code-copy')) continue;
     var btn=document.createElement('button');
     btn.type='button'; btn.className='code-copy'; btn.textContent='Copy';
     btn.addEventListener('click', (function(c){return function(){
@@ -723,7 +759,7 @@ Get-ChildItem -Path $RootDir -Recurse -File |
   }
 }catch(e){}})();</script>
 "@
-        $final = Inject-BottomScript $final $copyJs
+        $final = Inject-BottomScript -html $final -snippet $copyJs -markerName 'COPYJS'
       }
     }
 
@@ -771,7 +807,7 @@ foreach($u in $urls | Sort-Object loc){
 Set-Content -Encoding UTF8 $sitemapPath $xml.ToString()
 Write-Host "[ASD] sitemap.xml generated ($($urls.Count) urls)"
 
-# robots.txt: preserve or create default, then write ONE canonical Sitemap line
+# robots.txt: preserve/create, then single canonical Sitemap line
 $robotsPath = Join-Path $RootDir 'robots.txt'
 $robots = if (Test-Path $robotsPath) { Get-Content $robotsPath -Raw } else {
 @"
