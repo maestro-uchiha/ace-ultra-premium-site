@@ -48,16 +48,33 @@ function Ensure-AbsoluteBaseUrl {
   if ([string]::IsNullOrWhiteSpace($u)) { return "/" }
 
   $u = $u.Trim()
+
+  # If absolute (has a scheme)
   if ($u -match '^[a-z]+://') {
-    $u = $u -replace ':/','://'         # fix scheme if needed
-    $u = ($u.TrimEnd('/') + '/')        # ensure single trailing slash
-    $u = $u -replace '/{2,}','/'        # collapse duplicate slashes in path
-    return $u
+    # Fix "https:/foo" -> "https://foo" (ensure two slashes after scheme)
+    $u = $u -replace '(^[a-z]+:)/','${1}//'
+
+    # Preserve scheme while collapsing duplicate slashes only in the path
+    if ($u -match '^([a-z]+://)(.*)$') {
+      $scheme = $matches[1]
+      $rest   = $matches[2]
+
+      # normalize path part
+      $rest = $rest.TrimEnd('/')
+      $rest = $rest -replace '/{2,}','/'
+
+      return $scheme + $rest + '/'
+    }
+
+    # Fallback (shouldn’t hit)
+    return ($u.TrimEnd('/') + '/')
   }
 
+  # Rooted path (project pages like /repo/)
   if ($u -eq "/") { return "/" }
   return "/" + ($u.Trim('/')) + "/"
 }
+
 
 # Safely add or overwrite a NoteProperty on a PSCustomObject
 function AddOrSet-Prop {
