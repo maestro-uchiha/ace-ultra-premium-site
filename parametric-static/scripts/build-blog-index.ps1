@@ -1,26 +1,27 @@
 param([int]$PageSize = 10)
 
-# Load config
-$__here = Split-Path -Parent $PSCommandPath
+# ---- Load config / helpers ----
+$ErrorActionPreference = 'Stop'
+$__here  = Split-Path -Parent $PSCommandPath
 . (Join-Path $__here "_lib.ps1")
-$__cfg   = Get-ASDConfig
-$Brand   = $__cfg.SiteName
-$Money   = $__cfg.StoreUrl
-$Desc    = $__cfg.Description
-$Base    = $__cfg.BaseUrl
-$__paths = Get-ASDPaths
+$__cfg    = Get-ASDConfig
+$__paths  = Get-ASDPaths
 
-
-$Root   = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+$Root    = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Set-Location $Root
 $BlogDir = Join-Path $Root "blog"
 
-if (-not (Test-Path $BlogDir)) { Write-Error "blog/ folder not found."; exit 1 }
+if (-not (Test-Path $BlogDir)) {
+  Write-Error "blog/ folder not found at '$BlogDir'."; exit 1
+}
 
 function Get-PostTitle([string]$path) {
   $raw = Get-Content $path -Raw
-  $mc = [regex]::Match($raw, '(?is)<!--\s*ASD:CONTENT_START\s*-->(.*?)<!--\s*ASD:CONTENT_END\s*-->')
-  $segment = if ($mc.Success) { $mc.Groups[1].Value } else {
+  $mc = [regex]::Match(
+    $raw,
+    '(?is)<!--\s*ASD:(CONTENT|BODY)_START\s*-->(.*?)<!--\s*ASD:(CONTENT|BODY)_END\s*-->'
+  )
+  $segment = if ($mc.Success) { $mc.Groups[2].Value } else {
     $mm = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
     if ($mm.Success) { $mm.Groups[1].Value } else { $raw }
   }
@@ -31,18 +32,67 @@ function Get-PostTitle([string]$path) {
   return [IO.Path]::GetFileNameWithoutExtension($path)
 }
 
-$posts = Get-ChildItem $BlogDir -Filter *.html -File `
-  | Where-Object { $_.Name -ne 'index.html' -and $_.Name -notmatch '^page-\d+\.html$' } `
-  | Sort-Object LastWriteTime -Descending
-
-$items = @()
-foreach ($f in $posts) {
-  $title = Get-PostTitle $f.FullName
-  $date  = $f.LastWriteTime.ToString('yyyy-MM-dd')
-  $rel   = "./$($f.Name)"
-  $items += ('<li><a href="{0}">{1}</a><small> &middot; {2}</small></li>' -f $rel, $title, $date)
+function TryParse-Date([string]$v) {
+  if ([string]::IsNullOrWhiteSpace($v)) { return $null }
+  [datetime]$out = [datetime]::MinValue
+  $ok = [datetime]::TryParse(
+    $v,
+    [System.Globalization.CultureInfo]::InvariantCulture,
+    [System.Globalization.DateTimeStyles]::AssumeLocal,
+    [ref]$out
+  )
+  if ($ok) { return $out } else { return $null }
 }
 
+function Get-MetaDateFromHtml([string]$html) {
+  if ([string]::IsNullOrWhiteSpace($html)) { return $null }
+  $m = [regex]::Match($html, '(?is)<meta\s+name\s*=\s*["'']date["'']\s+content\s*=\s*["'']([^"''<>]+)["'']')
+  if ($m.Success) {
+    $dt = TryParse-Date ($m.Groups[1].Value.Trim())
+    if ($dt) { return $dt.ToString('yyyy-MM-dd') }
+  }
+  $t = [regex]::Match($html, '(?is)<time[^>]+datetime\s*=\s*["'']([^"''<>]+)["'']')
+  if ($t.Success) {
+    $dt = TryParse-Date ($t.Groups[1].Value.Trim())
+    if ($dt) { return $dt.ToString('yyyy-MM-dd') }
+  }
+  return $null
+}
+
+# Collect posts (skip index/page-*.html) with stable date
+$posts = @()
+Get-ChildItem $BlogDir -Filter *.html -File |
+  Where-Object { $_.Name -ne 'index.html' -and $_.Name -notmatch '^page-\d+\.html$' } |
+  ForEach-Object {
+    $raw = Get-Content $_.FullName -Raw
+    if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') { return }
+
+    $title = Get-PostTitle $_.FullName
+    $dateStr = Get-MetaDateFromHtml $raw
+    $dateDt  = $null
+    if ($dateStr) {
+      $tmp = TryParse-Date $dateStr
+      if ($tmp) { $dateDt = $tmp }
+    }
+    if (-not $dateDt) { $dateDt = $_.CreationTime; $dateStr = $dateDt.ToString('yyyy-MM-dd') }
+
+    $posts += [pscustomobject]@{
+      Name    = $_.Name
+      Title   = $title
+      DateStr = $dateStr
+      DateDt  = $dateDt
+    }
+  }
+
+$posts = $posts | Sort-Object DateDt -Descending
+
+$items = @()
+foreach ($p in $posts) {
+  $rel = "./$($p.Name)"
+  $items += ('<li><a href="{0}">{1}</a><small> &middot; {2}</small></li>' -f $rel, (Normalize-DashesToPipe $p.Title), $p.DateStr)
+}
+
+# Remove old paginated pages
 Get-ChildItem $BlogDir -Filter 'page-*.html' -File | Remove-Item -Force -ErrorAction SilentlyContinue
 
 if ($items.Count -eq 0) {

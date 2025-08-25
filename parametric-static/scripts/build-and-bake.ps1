@@ -1,29 +1,41 @@
 param([int]$PageSize = 10)
 
-# Load config / helpers (PS 5.1-safe)
-$__here = Split-Path -Parent $PSCommandPath
+# ---- Load config / helpers (PS 5.1-safe) ----
+$ErrorActionPreference = 'Stop'
+$__here  = Split-Path -Parent $PSCommandPath
 . (Join-Path $__here "_lib.ps1")
 
-$__cfg   = Get-ASDConfig
-$__paths = Get-ASDPaths
+$__cfg    = Get-ASDConfig
+$__paths  = Get-ASDPaths
 
-$Root   = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+# Repo root is two levels up from /scripts
+$Root     = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Set-Location $Root
-$BlogDir = Join-Path $Root "blog"
+$BlogDir  = Join-Path $Root "blog"
 
-if (-not (Test-Path $BlogDir)) { Write-Error "blog/ folder not found."; exit 1 }
+if (-not (Test-Path $BlogDir)) {
+  Write-Error "blog/ folder not found at '$BlogDir'."; exit 1
+}
 
 function Get-PostTitle([string]$path) {
   $raw = Get-Content $path -Raw
-  $mc = [regex]::Match($raw, '(?is)<!--\s*ASD:(CONTENT|BODY)_START\s*-->(.*?)<!--\s*ASD:(CONTENT|BODY)_END\s*-->')
+
+  # Prefer editable content region if present (supports CONTENT/BODY variants)
+  $mc = [regex]::Match(
+    $raw,
+    '(?is)<!--\s*ASD:(CONTENT|BODY)_START\s*-->(.*?)<!--\s*ASD:(CONTENT|BODY)_END\s*-->'
+  )
   $segment = if ($mc.Success) { $mc.Groups[2].Value } else {
     $mm = [regex]::Match($raw, '(?is)<main\b[^>]*>(.*?)</main>')
     if ($mm.Success) { $mm.Groups[1].Value } else { $raw }
   }
+
   $mH1 = [regex]::Match($segment, '(?is)<h1[^>]*>(.*?)</h1>')
   if ($mH1.Success) { return $mH1.Groups[1].Value }
+
   $mTitle = [regex]::Match($raw, '(?is)<title>(.*?)</title>')
   if ($mTitle.Success) { return $mTitle.Groups[1].Value }
+
   return [IO.Path]::GetFileNameWithoutExtension($path)
 }
 
@@ -56,12 +68,17 @@ function Get-MetaDateFromHtml([string]$html) {
   return $null
 }
 
-# Collect posts with stable date (prefer meta date)
+Write-Host "[paginate] Scanning posts in $BlogDir …"
+
+# Collect posts using stable date (prefer meta date, else CreationTime)
 $posts = @()
 Get-ChildItem $BlogDir -Filter *.html -File |
   Where-Object { $_.Name -ne 'index.html' -and $_.Name -notmatch '^page-\d+\.html$' } |
   ForEach-Object {
     $raw   = Get-Content $_.FullName -Raw
+    # Skip redirect stubs just in case
+    if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') { return }
+
     $title = Get-PostTitle $_.FullName
 
     $dateStr = Get-MetaDateFromHtml $raw
@@ -155,7 +172,13 @@ $pagerHtml
   Write-Host ("[paginate] Done. Pages: {0}, Items: {1}" -f $pages, $total)
 }
 
-# ---- NEW: Immediately bake so pagination pages get header/footer + CSS prefix
+# ---- Immediately bake so pages get wrapped with layout and fixed prefixes ----
 $BakePath = Join-Path $__paths.Scripts 'bake.ps1'
 Write-Host "[paginate] Calling bake to wrap pages with layout and fix prefixes…"
+
+if (-not (Test-Path $BakePath)) {
+  Write-Error "bake.ps1 not found at '$BakePath'"; exit 1
+}
+
+# Use call operator to run the script in a new scope
 & $BakePath
