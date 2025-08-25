@@ -275,7 +275,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 
 /* Section spacing */
 main > section { padding: var(--section-gap) 0; }
-main > section.hero { padding: var(--section-gap-lg) 0; }
+main > section.hero { padding: var(--section-gap-lg) 20; }
 
 /* Hero */
 .hero {
@@ -385,7 +385,7 @@ main > section.hero { padding: var(--section-gap-lg) 0; }
 }
 .btn.ghost {
   background: transparent;
-  color: var(--text);
+  color: var(--bg);
   border-color: var(--border);
 }
 .btn.link {
