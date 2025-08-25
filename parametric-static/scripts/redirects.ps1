@@ -1,3 +1,4 @@
+# parametric-static/scripts/redirects.ps1
 param(
   [switch]$Add,
   [switch]$List,
@@ -11,139 +12,199 @@ param(
   [string]$File
 )
 
-# Load config
+# ---------------- env / paths ----------------
 $__here = Split-Path -Parent $PSCommandPath
 . (Join-Path $__here "_lib.ps1")
-$__cfg   = Get-ASDConfig
-$Brand   = $__cfg.SiteName
-$Money   = $__cfg.StoreUrl
-$Desc    = $__cfg.Description
-$Base    = $__cfg.BaseUrl
-$__paths = Get-ASDPaths
+$paths = Get-ASDPaths
+$Root  = $paths.Root
 
-$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $DefaultFile = Join-Path $Root "redirects.json"
 if (-not $File) { $File = $DefaultFile }
 
-function Ensure-Array {
+# ---------------- helpers ----------------
+
+function New-ArrayList { New-Object System.Collections.ArrayList }
+
+function To-ArrayList {
   param($x)
-  if ($null -eq $x) { return @() }
-  if ($x -is [System.Array]) { return $x }
-  return @($x)
+  $list = New-ArrayList
+  if ($null -eq $x) { return $list }
+  if ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) {
+    foreach ($i in $x) { [void]$list.Add($i) }
+  } else {
+    [void]$list.Add($x)
+  }
+  return $list
+}
+
+function Ensure-ArrayList {
+  param($x)
+  if ($x -is [System.Collections.ArrayList]) { return $x }
+  return (To-ArrayList $x)
+}
+
+function Get-Count {
+  param($x)
+  if ($null -eq $x) { return 0 }
+  if ($x -is [System.Collections.ICollection]) { return $x.Count }
+  if ($x -is [System.Array]) { return $x.Length }
+  if ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) {
+    $n = 0; foreach ($i in $x) { $n++ }; return $n
+  }
+  return 1
+}
+
+function Migrate-Entry {
+  param($r)
+  if ($null -eq $r) { return $r }
+  # old -> new: disabled => enabled
+  if ($r.PSObject.Properties.Name -contains 'disabled' -and -not ($r.PSObject.Properties.Name -contains 'enabled')) {
+    $enabled = -not ([bool]$r.disabled)
+    if ($r.PSObject.Properties.Name -contains 'enabled') { $r.enabled = $enabled }
+    else { Add-Member -InputObject $r -NotePropertyName enabled -NotePropertyValue $enabled -Force | Out-Null }
+    try { $r.PSObject.Properties.Remove('disabled') | Out-Null } catch {}
+  }
+  if (-not ($r.PSObject.Properties.Name -contains 'enabled')) {
+    Add-Member -InputObject $r -NotePropertyName enabled -NotePropertyValue $true -Force | Out-Null
+  }
+  if (-not ($r.PSObject.Properties.Name -contains 'code')) {
+    Add-Member -InputObject $r -NotePropertyName code -NotePropertyValue 301 -Force | Out-Null
+  }
+  return $r
+}
+
+function Normalize-Pathish([string]$p) {
+  if ([string]::IsNullOrWhiteSpace($p)) { return $p }
+  $p = $p.Trim()
+  if ($p -match '^(https?://)') { return $p }
+  if (-not $p.StartsWith('/')) { $p = '/' + $p }
+  return $p
 }
 
 function Load-Redirects {
   param([string]$path)
-  if (!(Test-Path $path)) { return @() }
+  if (-not (Test-Path $path)) { return (New-ArrayList) }
   try {
     $raw = Get-Content $path -Raw
+    if ([string]::IsNullOrWhiteSpace($raw)) { return (New-ArrayList) }
     if ($raw -notmatch '^\s*[\[\{]') { throw "Not JSON" }
     $obj = $raw | ConvertFrom-Json -ErrorAction Stop
-    return (Ensure-Array $obj)
+    $arr = To-ArrayList $obj
+    $out = New-ArrayList
+    foreach ($e in $arr) { [void]$out.Add((Migrate-Entry $e)) }
+    return $out
   } catch {
-    Write-Warning "[redirects] Could not parse redirects.json; backing up and starting fresh. $($_.Exception.Message)"
+    Write-Warning "[redirects] Could not parse $path; backing up and starting fresh. $($_.Exception.Message)"
     try { Copy-Item $path ($path + ".corrupt.bak") -Force } catch {}
-    return @()
+    return (New-ArrayList)
   }
 }
 
 function Save-Redirects {
-  param([object[]]$items, [string]$path)
-  $items = Ensure-Array $items
-  # IMPORTANT: pass as InputObject, not via pipeline (PS 5.1 quirk)
-  $json = ConvertTo-Json -InputObject $items -Depth 6
+  param($items, [string]$path)
+  $items = Ensure-ArrayList $items
+  $dir = Split-Path -Parent $path
+  if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+  $ary = @()
+  foreach ($i in $items) { $ary += ,$i }  # force array, keep order
+  $json = ConvertTo-Json -InputObject $ary -Depth 6
   Set-Content -Encoding UTF8 $path $json
   Write-Host "[redirects] Saved -> $path"
 }
 
 function Validate-Index {
-  param([int]$i, [object[]]$arr)
-  $arr = Ensure-Array $arr
-  if ($i -lt 0 -or $i -ge $arr.Count) {
+  param([int]$i, $arr)
+  $list  = Ensure-ArrayList $arr
+  $count = Get-Count $list
+  if ($i -lt 0 -or $i -ge $count) {
     Write-Error "Index out of range. Use -List to see entries." ; exit 1
   }
 }
 
-# ---- Load (array-safe)
-$items = Load-Redirects -path $File
-$items = Ensure-Array $items
+# ---------------- load ----------------
+$items = Ensure-ArrayList (Load-Redirects -path $File)
 
-# ---- Operations
+# ---------------- ops -----------------
+
 if ($Add) {
   if ([string]::IsNullOrWhiteSpace($From) -or [string]::IsNullOrWhiteSpace($To)) {
-    Write-Error 'Use -Add -From "/old" -To "/new-or-https://domain/path" [-Code 301]' ; exit 1
+    Write-Error 'Use -Add -From "/old" -To "/new" or -To "https://domain/path" [-Code 301]' ; exit 1
   }
-  if ($From -notmatch '^(\/|https?:\/\/)') { Write-Error '-From must start with "/" or "http(s)://".' ; exit 1 }
-  if ($To   -notmatch '^(\/|https?:\/\/)') { Write-Error '-To must start with "/" or "http(s)://".'   ; exit 1 }
+  $From = Normalize-Pathish $From
+  $To   = Normalize-Pathish $To
+  if ($From -notmatch '^(\/|https?://)') { Write-Error '-From must start with "/" or "http(s)://".' ; exit 1 }
+  if ($To   -notmatch '^(\/|https?://)') { Write-Error '-To must start with "/" or "http(s)://".'   ; exit 1 }
   if ($Code -notin 301,302,307,308) { $Code = 301 }
 
   $new = [pscustomobject]@{
-    from     = $From
-    to       = $To
-    code     = $Code
-    disabled = $false
+    from    = $From
+    to      = $To
+    code    = $Code
+    enabled = $true
   }
+  $items = Ensure-ArrayList $items
+  [void]$items.Add($new)
 
-  $items = @($items + $new)
   Save-Redirects -items $items -path $File
   Write-Host "[redirects] added: $From -> $To (code $Code)"
-  Write-Host ("[redirects] total: {0}" -f $items.Count)
+  Write-Host ("[redirects] total: {0}" -f (Get-Count $items))
   exit 0
 }
 
 if ($List) {
-  $items = Ensure-Array $items
   Write-Host "[redirects] entries:"
-  if ($items.Count -eq 0) { Write-Host "  (none)"; exit 0 }
-  for ($i = 0; $i -lt $items.Count; $i++) {
+  $items = Ensure-ArrayList $items
+  $count = Get-Count $items
+  if ($count -eq 0) { Write-Host "  (none)"; exit 0 }
+
+  for ($i = 0; $i -lt $count; $i++) {
     $r = $items[$i]
-    $state = if ($r.disabled) { "DISABLED" } else { "ACTIVE" }
-    Write-Host ("  #{0}: {1} -> {2}  (code {3}, {4})" -f $i, $r.from, $r.to, $r.code, $state)
+    $state = if ($r.PSObject.Properties.Match('enabled').Count -gt 0 -and $r.enabled -eq $false) { "DISABLED" } else { "ENABLED" }
+    $code  = if ($r.PSObject.Properties.Match('code').Count -gt 0 -and $r.code) { $r.code } else { 301 }
+    $from  = if ($r.PSObject.Properties.Match('from').Count -gt 0) { $r.from } else { "(missing from)" }
+    $to    = if ($r.PSObject.Properties.Match('to').Count   -gt 0) { $r.to }   else { "(missing to)" }
+    Write-Host ("  #{0}: {1} -> {2}  (code {3}, {4})" -f $i, $from, $to, $code, $state)
   }
-  Write-Host ("[redirects] total: {0}" -f $items.Count)
+  Write-Host ("[redirects] total: {0}" -f $count)
   exit 0
 }
 
 if ($Disable) {
-  $items = Ensure-Array $items
+  $items = Ensure-ArrayList $items
   Validate-Index -i $Index -arr $items
-  if ($null -eq $items[$Index].PSObject.Properties['disabled']) {
-    Add-Member -InputObject $items[$Index] -NotePropertyName disabled -NotePropertyValue $false
+  if ($null -eq $items[$Index].PSObject.Properties['enabled']) {
+    Add-Member -InputObject $items[$Index] -NotePropertyName enabled -NotePropertyValue $true -Force | Out-Null
   }
-  $items[$Index].disabled = $true
+  $items[$Index].enabled = $false
   Save-Redirects -items $items -path $File
   Write-Host ("[redirects] disabled #{0}: {1} -> {2}" -f $Index, $items[$Index].from, $items[$Index].to)
   exit 0
 }
 
 if ($Enable) {
-  $items = Ensure-Array $items
+  $items = Ensure-ArrayList $items
   Validate-Index -i $Index -arr $items
-  if ($null -eq $items[$Index].PSObject.Properties['disabled']) {
-    Add-Member -InputObject $items[$Index] -NotePropertyName disabled -NotePropertyValue $false
+  if ($null -eq $items[$Index].PSObject.Properties['enabled']) {
+    Add-Member -InputObject $items[$Index] -NotePropertyName enabled -NotePropertyValue $true -Force | Out-Null
   }
-  $items[$Index].disabled = $false
+  $items[$Index].enabled = $true
   Save-Redirects -items $items -path $File
   Write-Host ("[redirects] enabled #{0}: {1} -> {2}" -f $Index, $items[$Index].from, $items[$Index].to)
   exit 0
 }
 
 if ($Remove) {
-  $items = Ensure-Array $items
+  $items = Ensure-ArrayList $items
   Validate-Index -i $Index -arr $items
   $removed = $items[$Index]
-  $keep = New-Object System.Collections.Generic.List[object]
-  for ($i=0; $i -lt $items.Count; $i++) {
-    if ($i -ne $Index) { $keep.Add($items[$i]) }
-  }
-  $items = @($keep.ToArray())
+  $items.RemoveAt($Index)
   Save-Redirects -items $items -path $File
   if ($removed) {
     Write-Host ("[redirects] removed #{0}: {1} -> {2}" -f $Index, $removed.from, $removed.to)
   } else {
     Write-Host ("[redirects] removed #{0}" -f $Index)
   }
-  Write-Host ("[redirects] total: {0}" -f $items.Count)
+  Write-Host ("[redirects] total: {0}" -f (Get-Count $items))
   exit 0
 }
 
