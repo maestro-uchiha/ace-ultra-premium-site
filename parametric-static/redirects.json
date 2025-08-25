@@ -3,6 +3,6 @@
         "from":  "/old",
         "to":  "/blog/new.html",
         "code":  301,
-        "enabled":  false
+        "enabled":  true
     }
 ]
