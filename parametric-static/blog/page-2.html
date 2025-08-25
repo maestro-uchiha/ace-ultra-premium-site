@@ -1,5 +1,54 @@
-﻿<!-- ASD:CONTENT_START -->
-<h1>Blog &mdash; Page 2</h1>
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Blog | Page 2 | Ace Ultra Premium</title>
+  <meta name="description" content="Premium {{BRAND}} | quality, reliability, trust.">
+  <link rel="canonical" href="../index.html">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Blog | Page 2 | Ace Ultra Premium">
+  <meta property="og:description" content="Premium {{BRAND}} | quality, reliability, trust.">
+  <meta property="og:image" content="../assets/img/og.jpg">
+  <meta property="og:type" content="website">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="icon" href="../assets/favicon.ico">
+  <link rel="stylesheet" href="../assets/css/style.css">
+
+  <link rel="alternate" type="application/rss+xml" title="Ace Ultra Premium Blog" href="../feed.xml">
+</head>
+<body>
+  <header>
+    <h1><a href="../index.html">Ace Ultra Premium</a></h1>
+
+    <!-- Mobile toggle (CSS bars, ASCII-safe) -->
+    <button id="navToggle" class="nav-toggle"
+            aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
+      <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+    </button>
+
+    <!-- Collapsible nav -->
+    <nav id="site-nav">
+      <ul>
+        <li><a href="../index.html">Home</a></li>
+        <li><a href="../blog/">Blog</a></li>
+        <li><a href="../about.html">About</a></li>
+        <li><a href="../contact.html">Contact</a></li>
+        <li><a href="../legal/privacy.html">Privacy</a></li>
+        <li><a href="../legal/terms.html">Terms</a></li>
+        <li><a href="../sitemap.html">Sitemap</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    
+<h1>Blog | Page 2</h1>
 <ul class="posts">
 <li><a href="./old-slug.html">old-slug | Ace Ultra Premium</a><small> &middot; 2025-08-24</small></li>
 <li><a href="./hello-asd.html">Hello ASD</a><small> &middot; 2025-08-24</small></li>
@@ -13,4 +62,47 @@
   <span class="pager-pages"><a href="./">1</a> <strong>2</strong></span>
   
 </nav>
-<!-- ASD:CONTENT_END -->
+
+  </main>
+
+<footer>
+  <p>
+    <a href="../index.html">Home</a> |
+    <a href="../blog/">Blog</a> |
+    <a href="../about.html">About</a> |
+    <a href="../contact.html">Contact</a> |
+    <a href="../legal/privacy.html">Privacy</a> |
+    <a href="../legal/terms.html">Terms</a> |
+    <a href="../sitemap.html">Sitemap</a>
+  </p>
+  <p>&copy; 2025 Ace Ultra Premium. All rights reserved.</p>
+</footer>
+
+  <script>
+    (function () {
+      var btn = document.getElementById('navToggle');
+      var nav = document.getElementById('site-nav');
+      if (!btn || !nav) return;
+
+      function set(open) {
+        btn.setAttribute('aria-expanded', open);
+        nav.classList.toggle('open', open);
+        btn.classList.toggle('is-active', open);
+      }
+      btn.addEventListener('click', function () {
+        set(btn.getAttribute('aria-expanded') !== 'true');
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') set(false);
+      });
+      nav.addEventListener('click', function (e) {
+        if (e.target && e.target.tagName === 'A') set(false);
+      });
+    })();
+  </script>
+</body>
+</html>
+
+
+
+
