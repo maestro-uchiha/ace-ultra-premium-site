@@ -1,7 +1,51 @@
 ﻿<!doctype html>
 <html lang="en">
 <head>
-  <meta name="robots" content="index,follow">
+<link rel="alternate" type="application/atom+xml" title="Ace Ultra Premium Atom" href="../atom.xml">
+<style id="asd-theme-style">
+/* ASD theme vars + toggle base (scoped, non-breaking) */
+:root{
+  --bg:#ffffff; --fg:#111111; --muted:#666666;
+  --link:#0b57d0; --link-visited:#6b39b2;
+  --card:#f6f7f9; --border:#e5e7eb;
+}
+@media (prefers-color-scheme: dark){
+  html:not([data-theme="light"]) {
+    --bg:#0b0d10; --fg:#eaecef; --muted:#9aa4af;
+    --link:#8ab4f8; --link-visited:#c58af9;
+    --card:#111418; --border:#1f2937;
+  }
+}
+html[data-theme="dark"]{
+  --bg:#0b0d10; --fg:#eaecef; --muted:#9aa4af;
+  --link:#8ab4f8; --link-visited:#c58af9;
+  --card:#111418; --border:#1f2937;
+}
+body{background:var(--bg); color:var(--fg);}
+a{color:var(--link);} a:visited{color:var(--link-visited);}
+hr, .card, pre, code, table, input, select, textarea { border-color: var(--border); }
+.asd-theme-toggle{
+  position:fixed; right:14px; bottom:14px; z-index:9999;
+  padding:8px 10px; border-radius:999px; border:1px solid var(--border);
+  background:var(--card); color:var(--fg);
+  font:500 14px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+  box-shadow:0 2px 10px rgba(0,0,0,.1); cursor:pointer;
+}
+.asd-theme-toggle:focus{ outline:2px solid var(--link); outline-offset:2px; }
+</style>
+<script id="asd-theme-boot">
+(function(){
+  try{
+    var key='asd-theme';
+    var saved=localStorage.getItem(key);
+    var theme=saved ? saved : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+  }catch(e){}
+})();
+</script>
+
+<meta name="robots" content="index,follow">
+
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
@@ -49,6 +93,7 @@
 
   <main>
     
+    
     <!-- ASD:BODY:START -->
   <article>
     <h1>Second New Post</h1>
@@ -61,6 +106,7 @@
 <!-- ASD:POST_BOTTOM_START -->
 <hr><div class="share-row">Share: <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fmaestro-uchiha.github.io%2Face-ultra-premium-site%2Fblog%2Fsecond-new-post.html&text=Second%20New%20Post" target="_blank" rel="noopener">X/Twitter</a> · <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fmaestro-uchiha.github.io%2Face-ultra-premium-site%2Fblog%2Fsecond-new-post.html" target="_blank" rel="noopener">LinkedIn</a> · <a href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fmaestro-uchiha.github.io%2Face-ultra-premium-site%2Fblog%2Fsecond-new-post.html" target="_blank" rel="noopener">Facebook</a></div><section class="related"><h2>Related posts</h2><ul class="posts"><li><a href="../blog/twelveth-post.html">Twelveth Post | Ace Ultra Premium</a><small> | 2025-08-25</small></li><li><a href="../blog/the-seventh-post.html">the-seventh-post | Ace Ultra Premium</a><small> | 2025-08-24</small></li><li><a href="../blog/tenth-post.html">Tenth Post | Ace Ultra Premium</a><small> | 2025-08-24</small></li></ul></section><p class="back-blog"><a href="../blog/">← Back to all posts</a></p>
 <!-- ASD:POST_BOTTOM_END -->
+  
   
   </main>
 
@@ -99,21 +145,26 @@
       });
     })();
   </script>
-<!-- ASD:DARKMODE_START -->
-<script>(function(){
-  try{
-    var key='asd-theme';
-    var saved=null;
-    try{ saved=localStorage.getItem(key); }catch(e){}
-    var theme=saved;
-    if(!theme){
-      if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches){ theme='dark'; }
-      else { theme='light'; }
-    }
-    document.documentElement.setAttribute('data-theme', theme);
-  }catch(e){}
-})();</script>
-<!-- ASD:DARKMODE_END -->
+
+<!-- ASD:THEME_TOGGLE -->
+<button class="asd-theme-toggle" id="asd-theme-toggle" type="button" aria-live="polite" title="Toggle theme">🌙 / ☀</button>
+<script id="asd-theme-handler">
+(function(){
+  var btn=document.getElementById('asd-theme-toggle');
+  if(!btn) return;
+  function setTheme(t){
+    document.documentElement.setAttribute('data-theme', t);
+    try{ localStorage.setItem('asd-theme', t); }catch(e){}
+    btn.setAttribute('aria-label', t==='dark' ? 'Switch to light theme' : 'Switch to dark theme');
+  }
+  btn.addEventListener('click', function(){
+    var cur=document.documentElement.getAttribute('data-theme')||'light';
+    setTheme(cur==='dark'?'light':'dark');
+  });
+  var now=document.documentElement.getAttribute('data-theme')||'light';
+  setTheme(now);
+})();
+</script>
 </body>
 </html>
 
