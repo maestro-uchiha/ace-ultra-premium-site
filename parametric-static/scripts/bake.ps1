@@ -69,6 +69,7 @@ function Collapse-DoubleSlashesPreserveSchemeLocal([string]$url) {
   return ($url -replace '/{2,}','/')
 }
 
+# --- BaseUrl normalization ---
 function Normalize-BaseUrlLocal([string]$b) {
   if ([string]::IsNullOrWhiteSpace($b)) { return "/" }
   $x = $b.Trim()
@@ -196,14 +197,16 @@ function DetermineRobotsForFile([string]$fullPath, [string]$rawHtml) {
   return 'index,follow'
 }
 
-# ------ NEW: cleanup + head/body injectors (feeds + theme boot + toggle) ------
+# ------ NEW: cleanup + injectors (feeds + theme + desktop-nav fix) ------
 
 function Remove-OldThemeArtifacts([string]$html) {
   if ([string]::IsNullOrWhiteSpace($html)) { return $html }
   $patterns = @(
     '(?is)<style[^>]+id\s*=\s*["'']asd-theme-style["''][^>]*>.*?</style>',
+    '(?is)<style[^>]+id\s*=\s*["'']asd-nav-fix["''][^>]*>.*?</style>',
     '(?is)<script[^>]+id\s*=\s*["'']asd-theme-handler["''][^>]*>.*?</script>',
-    '(?is)<button[^>]+id\s*=\s*["'']asd-theme-toggle["''][^>]*>.*?</button>'
+    '(?is)<script[^>]+id\s*=\s*["'']asd-theme-boot["''][^>]*>.*?</script>',
+    '(?is)<button[^>]+id\s*=\s*["'']theme-toggle["''][^>]*>.*?</button>'
   )
   foreach($p in $patterns){
     $html = [regex]::Replace($html, $p, '')
@@ -236,11 +239,11 @@ function Insert-BeforeBodyClose([string]$html, [string]$snippet) {
   }
 }
 
-function Ensure-HeadFeedsAndBoot([string]$html, [string]$prefix, [string]$brand) {
-  $nl = [Environment]::NewLine
+function Ensure-HeadFeedsThemeBootAndNavFix([string]$html, [string]$prefix, [string]$brand) {
   $needRss  = (-not ([regex]::IsMatch($html, '(?is)<link[^>]+type\s*=\s*["'']application/rss\+xml["''][^>]*>')))
   $needAtom = (-not ([regex]::IsMatch($html, '(?is)<link[^>]+type\s*=\s*["'']application/atom\+xml["''][^>]*>')))
   $needBoot = (-not ([regex]::IsMatch($html, '(?is)id\s*=\s*["'']asd-theme-boot["'']')))
+  $needNavFix = (-not ([regex]::IsMatch($html, '(?is)id\s*=\s*["'']asd-nav-fix["'']')))
 
   $snips = @()
 
@@ -262,30 +265,70 @@ function Ensure-HeadFeedsAndBoot([string]$html, [string]$prefix, [string]$brand)
 '@
   }
 
+  # Desktop nav fallback: ensure nav isn't collapsed on wide screens
+  if ($needNavFix) {
+    $snips += @'
+<style id="asd-nav-fix">
+@media (min-width:721px){
+  #site-nav{ max-height: none !important; overflow: visible !important; }
+}
+</style>
+'@
+  }
+
   if ($snips.Count -gt 0) { $html = Insert-AfterHeadOpen $html $snips }
   return $html
 }
 
 function Ensure-BodyThemeToggle([string]$html) {
-  if ([regex]::IsMatch($html, '(?is)ASD:THEME_TOGGLE|id\s*=\s*["'']theme-toggle["'']')) { return $html }
+  if ([regex]::IsMatch($html, '(?is)ASD:THEME_TOGGLE|id\s*=\s*["'']asd-theme-handler["'']')) { return $html }
+
   $snippet = @'
 <!-- ASD:THEME_TOGGLE -->
-<button class="theme-toggle" id="theme-toggle" type="button" aria-live="polite" title="Toggle theme">🌓</button>
 <script id="asd-theme-handler">
 (function(){
-  var btn=document.getElementById('theme-toggle');
-  if(!btn) return;
   function setTheme(t){
     document.documentElement.setAttribute('data-theme', t);
     try{ localStorage.setItem('asd-theme', t); }catch(e){}
-    btn.setAttribute('aria-label', t==='dark' ? 'Switch to light theme' : 'Switch to dark theme');
   }
-  btn.addEventListener('click', function(){
+  function toggle(){
     var cur=document.documentElement.getAttribute('data-theme')||'light';
     setTheme(cur==='dark'?'light':'dark');
+  }
+  function ready(fn){
+    if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', fn); }
+    else { fn(); }
+  }
+  function findOrCreateButton(){
+    var btn=document.getElementById('theme-toggle');
+    if(!btn){
+      var els=document.getElementsByClassName('theme-toggle');
+      if(els && els.length){ btn=els[0]; }
+    }
+    if(!btn){
+      btn=document.createElement('button');
+      btn.id='theme-toggle';
+      btn.className='theme-toggle';
+      btn.type='button';
+      btn.title='Toggle theme';
+      btn.setAttribute('aria-live','polite');
+      btn.textContent='🌓';
+      document.body.appendChild(btn);
+    }
+    return btn;
+  }
+  ready(function(){
+    try{
+      var btn=findOrCreateButton();
+      if(btn){ btn.addEventListener('click', toggle); }
+      document.addEventListener('keydown', function(e){
+        if((e.ctrlKey||e.metaKey) && e.key==='t'){ e.preventDefault(); toggle(); }
+      });
+      var init=document.documentElement.getAttribute('data-theme')||
+                ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');
+      setTheme(init);
+    }catch(e){}
   });
-  var now=document.documentElement.getAttribute('data-theme')||'light';
-  setTheme(now);
 })();
 </script>
 '@
@@ -301,6 +344,7 @@ function Build-PostList($BlogDir, $Base) {
     $html = Get-Content $f.FullName -Raw
     if ($html -match '(?is)<!--\s*ASD:REDIRECT\b') { continue }
 
+    # title
     $title = $null
     $mTitle = [regex]::Match($html, '(?is)<title>(.*?)</title>')
     if ($mTitle.Success) { $title = $mTitle.Groups[1].Value }
@@ -310,11 +354,13 @@ function Build-PostList($BlogDir, $Base) {
     }
     $title = Normalize-DashesToPipe $title
 
+    # date
     $metaDate = Get-MetaDateFromHtml $html
     $dateText = $null; $dateDt = $null
     if ($metaDate) { $dateText = $metaDate; $dateDt = TryParse-Date $metaDate }
     else { $dateDt = $f.CreationTime; $dateText = $f.CreationTime.ToString('yyyy-MM-dd') }
 
+    # absolute link
     $abs = $null
     if ($Base -match '^[a-z]+://') {
       $abs = (New-Object Uri((New-Object Uri($Base)), ('blog/' + $f.Name))).AbsoluteUri
@@ -328,6 +374,8 @@ function Build-PostList($BlogDir, $Base) {
       Date    = $dateDt
       DateText= $dateText
       Link    = Collapse-DoubleSlashesPreserveSchemeLocal $abs
+      Desc    = $null
+      Excerpt = $null
     })
   }
   return ($list | Sort-Object Date -Descending)
@@ -353,7 +401,8 @@ function Generate-RssFeed($posts, [string]$base, [string]$title, [string]$desc, 
     $lines.Add('    <item>') | Out-Null
     $lines.Add('      <title>' + (HtmlEscape $p.Title) + '</title>') | Out-Null
     $lines.Add('      <link>' + (HtmlEscape $p.Link) + '</link>') | Out-Null
-    $pub = if ($p.Date -is [datetime]) { Rfc1123 $p.Date } else { Rfc1123 (TryParse-Date $p.DateText) }
+    $pub = $null
+    if ($p.Date -is [datetime]) { $pub = Rfc1123 $p.Date } else { $pub = Rfc1123 (TryParse-Date $p.DateText) }
     $lines.Add('      <pubDate>' + $pub + '</pubDate>') | Out-Null
     $lines.Add('    </item>') | Out-Null
     $count++
@@ -387,7 +436,8 @@ function Generate-AtomFeed($posts, [string]$base, [string]$title, [string]$desc,
     $lines.Add('    <title>' + (HtmlEscape $p.Title) + '</title>') | Out-Null
     $lines.Add('    <link href="' + (HtmlEscape $p.Link) + '"/>') | Out-Null
     $lines.Add('    <id>' + (HtmlEscape $p.Link) + '</id>') | Out-Null
-    $updDt = if ($p.Date -is [datetime]) { $p.Date } else { TryParse-Date $p.DateText }
+    $updDt = $null
+    if ($p.Date -is [datetime]) { $updDt = $p.Date } else { $updDt = TryParse-Date $p.DateText }
     if ($null -eq $updDt) { $updDt = Get-Date }
     $lines.Add('    <updated>' + ($updDt.ToUniversalTime().ToString('s') + 'Z') + '</updated>') | Out-Null
     $lines.Add('  </entry>') | Out-Null
@@ -489,7 +539,8 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   $content = Extract-Content $raw
 
   $tm = [regex]::Match($content, '(?is)<h1[^>]*>(.*?)</h1>')
-  $pageTitle = if ($tm.Success) { $tm.Groups[1].Value } else { $_.BaseName }
+  $pageTitle = $null
+  if ($tm.Success) { $pageTitle = $tm.Groups[1].Value } else { $pageTitle = $_.BaseName }
 
   $prefix = Get-RelPrefix -RootDir $RootDir -FilePath $_.FullName
 
@@ -505,13 +556,13 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   $robotsVal = DetermineRobotsForFile $_.FullName $raw
   $final = AddOrReplaceMetaRobots $final $robotsVal
 
-  # Clean any old injected theme blocks (from earlier versions)
+  # Clean any prior injected blocks from older bakes
   $final = Remove-OldThemeArtifacts $final
 
-  # Inject feed links + boot
-  $final = Ensure-HeadFeedsAndBoot $final $prefix $Brand
+  # Inject head bits: feeds + theme boot + desktop nav fix
+  $final = Ensure-HeadFeedsThemeBootAndNavFix $final $prefix $Brand
 
-  # Inject theme toggle UI (uses your .theme-toggle styles)
+  # Inject toggle handler (makes/uses .theme-toggle button)
   $final = Ensure-BodyThemeToggle $final
 
   # Root-link rewrite + dash normalization

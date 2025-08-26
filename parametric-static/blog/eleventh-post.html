@@ -12,6 +12,11 @@
   }catch(e){}
 })();
 </script>
+<style id="asd-nav-fix">
+@media (min-width:721px){
+  #site-nav{ max-height: none !important; overflow: visible !important; }
+}
+</style>
 
 <meta name="robots" content="index,follow">
 
@@ -64,6 +69,7 @@
     
     
     
+    
     <article>
     <h1>Eleventh Post</h1>
 <!-- ASD:POST_TOP_START -->
@@ -74,6 +80,7 @@
 <!-- ASD:POST_BOTTOM_START -->
 <hr><div class="share-row">Share: <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fmaestro-uchiha.github.io%2Face-ultra-premium-site%2Fblog%2Feleventh-post.html&text=Eleventh%20Post" target="_blank" rel="noopener">X/Twitter</a> · <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fmaestro-uchiha.github.io%2Face-ultra-premium-site%2Fblog%2Feleventh-post.html" target="_blank" rel="noopener">LinkedIn</a> · <a href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fmaestro-uchiha.github.io%2Face-ultra-premium-site%2Fblog%2Feleventh-post.html" target="_blank" rel="noopener">Facebook</a></div><section class="related"><h2>Related posts</h2><ul class="posts"><li><a href="../blog/twelveth-post.html">Twelveth Post | Ace Ultra Premium</a><small> | 2025-08-25</small></li><li><a href="../blog/the-seventh-post.html">the-seventh-post | Ace Ultra Premium</a><small> | 2025-08-24</small></li><li><a href="../blog/tenth-post.html">Tenth Post | Ace Ultra Premium</a><small> | 2025-08-24</small></li></ul></section><p class="back-blog"><a href="../blog/">← Back to all posts</a></p>
 <!-- ASD:POST_BOTTOM_END -->
+  
   
   
   
@@ -116,22 +123,50 @@
   </script>
 
 <!-- ASD:THEME_TOGGLE -->
-<button class="theme-toggle" id="theme-toggle" type="button" aria-live="polite" title="Toggle theme">🌓</button>
 <script id="asd-theme-handler">
 (function(){
-  var btn=document.getElementById('theme-toggle');
-  if(!btn) return;
   function setTheme(t){
     document.documentElement.setAttribute('data-theme', t);
     try{ localStorage.setItem('asd-theme', t); }catch(e){}
-    btn.setAttribute('aria-label', t==='dark' ? 'Switch to light theme' : 'Switch to dark theme');
   }
-  btn.addEventListener('click', function(){
+  function toggle(){
     var cur=document.documentElement.getAttribute('data-theme')||'light';
     setTheme(cur==='dark'?'light':'dark');
+  }
+  function ready(fn){
+    if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', fn); }
+    else { fn(); }
+  }
+  function findOrCreateButton(){
+    var btn=document.getElementById('theme-toggle');
+    if(!btn){
+      var els=document.getElementsByClassName('theme-toggle');
+      if(els && els.length){ btn=els[0]; }
+    }
+    if(!btn){
+      btn=document.createElement('button');
+      btn.id='theme-toggle';
+      btn.className='theme-toggle';
+      btn.type='button';
+      btn.title='Toggle theme';
+      btn.setAttribute('aria-live','polite');
+      btn.textContent='🌓';
+      document.body.appendChild(btn);
+    }
+    return btn;
+  }
+  ready(function(){
+    try{
+      var btn=findOrCreateButton();
+      if(btn){ btn.addEventListener('click', toggle); }
+      document.addEventListener('keydown', function(e){
+        if((e.ctrlKey||e.metaKey) && e.key==='t'){ e.preventDefault(); toggle(); }
+      });
+      var init=document.documentElement.getAttribute('data-theme')||
+                ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');
+      setTheme(init);
+    }catch(e){}
   });
-  var now=document.documentElement.getAttribute('data-theme')||'light';
-  setTheme(now);
 })();
 </script>
 </body>
