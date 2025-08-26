@@ -38,7 +38,6 @@
   </script>
 
   <link rel="stylesheet" href="assets/css/style.css">
-  <!-- RSS present; bake.ps1 will add Atom if missing -->
   <link rel="alternate" type="application/rss+xml" title="Ace Ultra Premium Blog" href="feed.xml">
 </head>
 <body>
@@ -56,6 +55,7 @@
       <ul>
         <li><a href="index.html">Home</a></li>
         <li><a href="blog/">Blog</a></li>
+        <li><a href="search.html">Search</a></li>
         <li><a href="about.html">About</a></li>
         <li><a href="contact.html">Contact</a></li>
         <li><a href="legal/privacy.html">Privacy</a></li>
@@ -65,16 +65,8 @@
     </nav>
   </header>
 
-  <main>
-    
-    
-    
-    
-    
-    
-    
-    
-    <h1>Search</h1>
+  <!-- KEEP CONTENT ON ONE LINE TO AVOID WHITESPACE GROWTH -->
+  <main><h1>Search</h1>
 
 <div class="search-box">
   <input id="q" type="search" placeholder="Type to search posts..." aria-label="Search posts">
@@ -88,12 +80,18 @@
   var idx = [], elQ = document.getElementById('q'), elR = document.getElementById('results');
   function esc(s){return (s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
   function norm(s){return (s||'').toLowerCase()}
+  function prefix(){
+    var l=document.querySelector('link[rel="canonical"]');
+    if(l){ var h=l.getAttribute('href')||''; return h.replace(/index\.html$/,''); }
+    return '';
+  }
   function render(list){
     if(!list.length){ elR.innerHTML = '<p class="muted">No matches.</p>'; return; }
+    var pre = prefix();
     var out = ['<ul class="posts">'];
     for(var i=0;i<list.length;i++){
       var it=list[i];
-      out.push('<li><a href="'+esc(it.url)+'">'+esc(it.title)+'</a><small> | '+esc(it.date)+'</small><div class="muted">'+esc(it.desc||"")+'</div></li>');
+      out.push('<li><a href="'+esc(pre+it.url)+'">'+esc(it.title)+'</a><small> | '+esc(it.date)+'</small>'+(it.desc?('<div class="muted">'+esc(it.desc)+'</div>'):'')+'</li>');
     }
     out.push('</ul>'); elR.innerHTML = out.join('');
   }
@@ -102,7 +100,7 @@
     if(!q){ render([]); return; }
     var terms = q.split(/\s+/).filter(Boolean);
     var hits = idx.filter(function(it){
-      var hay = norm(it.title+' '+(it.desc||'')+' '+(it.tags||''));
+      var hay = norm(it.title+' '+(it.desc||''));
       for(var t=0;t<terms.length;t++){ if(hay.indexOf(terms[t])===-1) return false; }
       return true;
     });
@@ -113,25 +111,17 @@
       var a = elR.querySelector('a'); if(a){ location.href=a.href; }
     }
   }
-  fetch('/assets/search-index.json').then(function(r){return r.json()}).then(function(js){ idx=js||[]; });
+  fetch('assets/search-index.json').then(function(r){return r.json()}).then(function(js){ idx=js||[]; });
   elQ.addEventListener('input', function(){ search(this.value) });
   elQ.addEventListener('keydown', firstOpen);
 })();
-</script>
-  
-  
-  
-  
-  
-  
-  
-  
-  </main>
+</script></main>
 
   <footer>
     <p>
       <a href="index.html">Home</a> |
       <a href="blog/">Blog</a> |
+      <a href="search.html">Search</a> |
       <a href="about.html">About</a> |
       <a href="contact.html">Contact</a> |
       <a href="legal/privacy.html">Privacy</a> |

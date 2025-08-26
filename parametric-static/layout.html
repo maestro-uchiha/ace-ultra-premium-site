@@ -34,7 +34,6 @@
   </script>
 
   <link rel="stylesheet" href="{{PREFIX}}assets/css/style.css">
-  <!-- RSS present; bake.ps1 will add Atom if missing -->
   <link rel="alternate" type="application/rss+xml" title="{{BRAND}} Blog" href="{{PREFIX}}feed.xml">
 </head>
 <body>
@@ -52,6 +51,7 @@
       <ul>
         <li><a href="{{PREFIX}}index.html">Home</a></li>
         <li><a href="{{PREFIX}}blog/">Blog</a></li>
+        <li><a href="{{PREFIX}}search.html">Search</a></li>
         <li><a href="{{PREFIX}}about.html">About</a></li>
         <li><a href="{{PREFIX}}contact.html">Contact</a></li>
         <li><a href="{{PREFIX}}legal/privacy.html">Privacy</a></li>
@@ -61,14 +61,14 @@
     </nav>
   </header>
 
-  <main>
-    {{CONTENT}}
-  </main>
+  <!-- KEEP CONTENT ON ONE LINE TO AVOID WHITESPACE GROWTH -->
+  <main>{{CONTENT}}</main>
 
   <footer>
     <p>
       <a href="{{PREFIX}}index.html">Home</a> |
       <a href="{{PREFIX}}blog/">Blog</a> |
+      <a href="{{PREFIX}}search.html">Search</a> |
       <a href="{{PREFIX}}about.html">About</a> |
       <a href="{{PREFIX}}contact.html">Contact</a> |
       <a href="{{PREFIX}}legal/privacy.html">Privacy</a> |

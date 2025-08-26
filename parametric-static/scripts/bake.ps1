@@ -9,6 +9,7 @@
    - Rebuilds /blog/ index (stable dates; respects <meta name="date">)
    - Generates sitemap.xml, robots.txt (single Sitemap line)
    - Generates RSS (feed.xml) and Atom (atom.xml)
+   - Builds assets/search-index.json for search.html
    - Preserves file timestamps so baking doesn't change dates
    - PowerShell 5.1-safe
    ============================================ #>
@@ -32,6 +33,20 @@ function Get-MetaDateFromHtml([string]$html){
   $t=[regex]::Match($html,'(?is)<time[^>]+datetime\s*=\s*["'']([^"''<>]+)["'']')
   if($t.Success){$dt=TryParse-Date ($t.Groups[1].Value.Trim()); if($dt){return $dt.ToString('yyyy-MM-dd')}}
   $null
+}
+function Get-MetaDescriptionFromHtml([string]$html){
+  if([string]::IsNullOrWhiteSpace($html)){return $null}
+  $m=[regex]::Match($html,'(?is)<meta\s+name\s*=\s*["'']description["'']\s+content\s*=\s*["'']([^"''<>]*)["'']')
+  if($m.Success){ return $m.Groups[1].Value.Trim() }
+  return $null
+}
+function HtmlStrip([string]$s){
+  if([string]::IsNullOrWhiteSpace($s)){return ""}
+  $s = [regex]::Replace($s,'(?is)<script[^>]*>.*?</script>','')
+  $s = [regex]::Replace($s,'(?is)<style[^>]*>.*?</style>','')
+  $s = [regex]::Replace($s,'(?s)<[^>]+>',' ')
+  $s = [regex]::Replace($s,'\s+',' ').Trim()
+  return $s
 }
 function Preserve-FileTimes($p,[datetime]$c,[datetime]$w){try{(Get-Item $p).CreationTimeUtc=$c}catch{};try{(Get-Item $p).LastWriteTimeUtc=$w}catch{}}
 function Collapse-DoubleSlashesPreserveSchemeLocal([string]$u){
@@ -137,17 +152,14 @@ function Get-RootPrefixFromBase([string]$base){
       return $p
     } catch { return "/" }
   } else {
-    # rooted path form like "/repo/" or "/"
-    $x = "/" + ($base.Trim() -replace '^/+','') 
+    $x = "/" + ($base.Trim() -replace '^/+','')
     if(-not $x.EndsWith("/")){ $x += "/" }
     return $x
   }
 }
 function Fix-404Links([string]$html,[string]$base){
   $root = Get-RootPrefixFromBase $base
-  # assets (href/src/content) starting with {{PREFIX}}assets/ or assets/ -> root/assets/
   $html = [regex]::Replace($html,'(?i)\b(href|src|content)\s*=\s*"((\{\{PREFIX\}\})?assets/)', '$1="' + $root + 'assets/')
-  # canonical -> root index
   $html = [regex]::Replace($html,'(?i)<link\s+rel\s*=\s*"canonical"\s+href\s*=\s*"[^"]*"\s*>','<link rel="canonical" href="' + $root + 'index.html">')
   return $html
 }
@@ -189,6 +201,7 @@ function Generate-RssFeed($posts,[string]$base,[string]$title,[string]$desc,[str
     $pub=$null; if($p.Date -is [datetime]){$pub=Rfc1123 $p.Date}else{$pub=Rfc1123 (TryParse-Date $p.DateText)}
     $lines.Add('      <pubDate>'+ $pub +'</pubDate>')|Out-Null
     $lines.Add('    </item>')|Out-Null
+    $lines.Add('')
     $count++
   }
   $lines.Add('  </channel>')|Out-Null
@@ -220,6 +233,44 @@ function Generate-AtomFeed($posts,[string]$base,[string]$title,[string]$desc,[st
   }
   $lines.Add('</feed>')|Out-Null
   Set-Content -Encoding UTF8 $outPath ($lines -join [Environment]::NewLine)
+}
+
+# --- Build Search Index (JSON at assets/search-index.json) ---
+function Build-SearchIndex($BlogDir,$RootDir){
+  $rows = @()
+  $files=Get-ChildItem -Path $BlogDir -Filter *.html -File | Where-Object { $_.Name -ne 'index.html' -and $_.Name -notmatch '^page-\d+\.html$' }
+  foreach($f in $files){
+    $html = Get-Content $f.FullName -Raw
+    if ($html -match '(?is)<!--\s*ASD:REDIRECT\b'){ continue }
+    $title=$f.BaseName
+    $mTitle=[regex]::Match($html,'(?is)<title>(.*?)</title>')
+    if($mTitle.Success){ $title=$mTitle.Groups[1].Value }
+    $title=Normalize-DashesToPipe $title
+
+    $date = Get-MetaDateFromHtml $html
+    if(-not $date){ $date = $f.CreationTime.ToString('yyyy-MM-dd') }
+
+    $desc = Get-MetaDescriptionFromHtml $html
+    if(-not $desc){
+      $mP=[regex]::Match($html,'(?is)<p[^>]*>(.*?)</p>')
+      if($mP.Success){ $desc = HtmlStrip $mP.Groups[1].Value } else { $desc = "" }
+      if($desc.Length -gt 240){ $desc = $desc.Substring(0,240) + '…' }
+    }
+
+    $rows += [pscustomobject]@{
+      title = $title
+      url   = ('blog/' + $f.Name)   # prefix added on the client
+      date  = $date
+      desc  = $desc
+    }
+  }
+
+  $assetsDir = Join-Path $RootDir 'assets'
+  if(-not (Test-Path $assetsDir)){ New-Item -ItemType Directory -Force -Path $assetsDir | Out-Null }
+  $outPath = Join-Path $assetsDir 'search-index.json'
+  $json = $rows | ConvertTo-Json -Depth 4 -Compress
+  Set-Content -Encoding UTF8 $outPath $json
+  Write-Host "[ASD] search-index.json built ($($rows.Count) items)"
 }
 
 # ---------------- start ----------------
@@ -261,7 +312,7 @@ if(Test-Path $BlogIndex){
   $bi=Get-Content $BlogIndex -Raw
   $joined=[string]::Join([Environment]::NewLine,$posts)
   $pattern='(?s)<!-- POSTS_START -->.*?<!-- POSTS_END -->'
-  $replacement='<!-- POSTS_START -->' + $joined + '<!-- POSTS_END -->'   # no extra newlines
+  $replacement='<!-- POSTS_START -->' + $joined + '<!-- POSTS_END -->'
   $bi=[regex]::Replace($bi,$pattern,$replacement)
   Set-Content -Encoding UTF8 $BlogIndex $bi
   Write-Host "[ASD] Blog index updated"
@@ -274,6 +325,9 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   if($raw -match '(?is)<!--\s*ASD:REDIRECT\b'){ Write-Host ("[ASD] Skipped redirect stub: {0}" -f $_.FullName.Substring($RootDir.Length+1)); return }
 
   $content=Extract-Content $raw
+  if($null -eq $content){ $content='' }
+  $content=$content.Trim()  # <<< prevent whitespace growth around content
+
   $tm=[regex]::Match($content,'(?is)<h1[^>]*>(.*?)</h1>'); $pageTitle=$null
   if($tm.Success){$pageTitle=$tm.Groups[1].Value}else{$pageTitle=$_.BaseName}
 
@@ -391,5 +445,8 @@ $atomPath=Join-Path $RootDir 'atom.xml'
 $postsForFeed=Build-PostList -BlogDir $BlogDir -Base $Base
 Generate-RssFeed  -posts $postsForFeed -base $Base -title $Brand -desc $Desc -outPath $rssPath  -maxItems 20
 Generate-AtomFeed -posts $postsForFeed -base $Base -title $Brand -desc $Desc -outPath $atomPath -maxItems 20
+
+# Search index
+Build-SearchIndex -BlogDir $BlogDir -RootDir $RootDir
 
 Write-Host "[ASD] Done."
