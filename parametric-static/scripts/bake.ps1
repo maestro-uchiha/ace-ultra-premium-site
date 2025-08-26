@@ -139,7 +139,7 @@ function Ensure-HeadFeeds([string]$html,[string]$prefix,[string]$brand){
   $html
 }
 
-# --- 404 helpers: keep assets/root links absolute so CSS loads under any path ---
+# --- 404 helpers: make all relative links root-absolute so CSS + nav work anywhere ---
 function Get-RootPrefixFromBase([string]$base){
   if([string]::IsNullOrWhiteSpace($base)){ return "/" }
   if($base -match '^[a-z]+://'){
@@ -159,8 +159,12 @@ function Get-RootPrefixFromBase([string]$base){
 }
 function Fix-404Links([string]$html,[string]$base){
   $root = Get-RootPrefixFromBase $base
+  # assets to root
   $html = [regex]::Replace($html,'(?i)\b(href|src|content)\s*=\s*"((\{\{PREFIX\}\})?assets/)', '$1="' + $root + 'assets/')
+  # canonical to root index
   $html = [regex]::Replace($html,'(?i)<link\s+rel\s*=\s*"canonical"\s+href\s*=\s*"[^"]*"\s*>','<link rel="canonical" href="' + $root + 'index.html">')
+  # ANY relative href (not http(s), mailto, tel, #, or starting with /) → root-absolute
+  $html = [regex]::Replace($html,'(?i)href\s*=\s*"(?!https?://|mailto:|tel:|#|/)([^"]+)"','href="' + $root + '$1"')
   return $html
 }
 
@@ -201,8 +205,6 @@ function Generate-RssFeed($posts,[string]$base,[string]$title,[string]$desc,[str
     $pub=$null; if($p.Date -is [datetime]){$pub=Rfc1123 $p.Date}else{$pub=Rfc1123 (TryParse-Date $p.DateText)}
     $lines.Add('      <pubDate>'+ $pub +'</pubDate>')|Out-Null
     $lines.Add('    </item>')|Out-Null
-    $lines.Add('')
-    $count++
   }
   $lines.Add('  </channel>')|Out-Null
   $lines.Add('</rss>')|Out-Null
@@ -229,7 +231,6 @@ function Generate-AtomFeed($posts,[string]$base,[string]$title,[string]$desc,[st
     $updDt=$null; if($p.Date -is [datetime]){$updDt=$p.Date}else{$updDt=TryParse-Date $p.DateText}; if($null -eq $updDt){$updDt=Get-Date}
     $lines.Add('    <updated>'+ ($updDt.ToUniversalTime().ToString('s')+'Z') +'</updated>')|Out-Null
     $lines.Add('  </entry>')|Out-Null
-    $count++
   }
   $lines.Add('</feed>')|Out-Null
   Set-Content -Encoding UTF8 $outPath ($lines -join [Environment]::NewLine)
@@ -326,7 +327,9 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
 
   $content=Extract-Content $raw
   if($null -eq $content){ $content='' }
-  $content=$content.Trim()  # <<< prevent whitespace growth around content
+  $content=$content.Trim()
+  # also collapse 3+ blank lines inside content to prevent growth
+  $content=[regex]::Replace($content,'(\r?\n){3,}',([Environment]::NewLine + [Environment]::NewLine))
 
   $tm=[regex]::Match($content,'(?is)<h1[^>]*>(.*?)</h1>'); $pageTitle=$null
   if($tm.Success){$pageTitle=$tm.Groups[1].Value}else{$pageTitle=$_.BaseName}
@@ -339,7 +342,7 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   # Feeds
   $final=Ensure-HeadFeeds $final $prefix $Brand
 
-  # 404 special: keep assets/canonical rooted; skip prefix rewrite
+  # 404 special: keep assets/canonical rooted and convert relative hrefs to root-absolute; skip prefix rewrite
   $name=[IO.Path]::GetFileName($_.FullName)
   if($name -ieq '404.html'){
     $final = Fix-404Links $final $Base
