@@ -1,7 +1,6 @@
 ﻿<!doctype html>
 <html lang="en">
 <head>
-  <meta name="robots" content="noindex,nofollow">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
@@ -19,9 +18,10 @@
   <meta name="twitter:card" content="summary_large_image">
 
   <link rel="icon" href="assets/favicon.ico">
-  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="preload" href="assets/css/style.css" as="style" onload="this.onload=null;this.rel='stylesheet'"><noscript><link rel="stylesheet" href="assets/css/style.css"></noscript>
 
   <link rel="alternate" type="application/rss+xml" title="Ace Ultra Premium Blog" href="feed.xml">
+  <meta name="robots" content="noindex,follow">
 </head>
 <body>
   <header>
@@ -46,14 +46,10 @@
       </ul>
     </nav>
   </header>
-
-  <main>
-    
+<main>
     <h1>404 - Not Found</h1>
     <p>That page doesn't exist. <a href="index.html">Return home</a>.</p>
-  
   </main>
-
 <footer>
   <p>
     <a href="index.html">Home</a> |
@@ -89,6 +85,29 @@
       });
     })();
   </script>
+<script>(function(){var BASE='https://maestro-uchiha.github.io/ace-ultra-premium-site/';
+function isAbs(u){return /^[a-z]+:\/\//i.test(u);}
+function abs(u){if(!u)return u;if(isAbs(u))return u;if(u.charAt(0)=='/')return BASE.replace(/\/$/,'')+u;return BASE+u.replace(/^\.\//,'');}
+function fix(){
+  try{var links=document.querySelectorAll('link[rel="stylesheet"][href]');for(var i=0;i<links.length;i++){var h=links[i].getAttribute('href')||'';if(!isAbs(h)){links[i].setAttribute('href',abs(h));}}}catch(e){}
+  try{var sels=['a[data-asd-home]','a[href="index.html"]','a[href="/"]','a[href="/index.html"]'];for(var s=0;s<sels.length;s++){var list=document.querySelectorAll(sels[s]);for(var j=0;j<list.length;j++){list[j].setAttribute('href',BASE);}}}catch(e){}
+}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',fix);}else{fix();}
+})();</script>
+<!-- ASD:DARKMODE_START -->
+<script>(function(){
+  function apply(t){document.documentElement.setAttribute('data-theme',t);}
+  var key='asd-theme', saved=localStorage.getItem(key);
+  if(saved){apply(saved);}else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches){apply('dark');}
+  function ensureButton(){
+    if(document.querySelector('.theme-toggle')) return;
+    var b=document.createElement('button'); b.className='theme-toggle'; b.type='button'; b.setAttribute('aria-label','Toggle theme'); b.textContent='☾';
+    b.addEventListener('click',function(){ var cur=document.documentElement.getAttribute('data-theme'); var nxt=cur==='dark'?'light':'dark'; apply(nxt); localStorage.setItem(key,nxt); });
+    document.body.appendChild(b);
+  }
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',ensureButton);}else{ensureButton();}
+})();</script>
+<!-- ASD:DARKMODE_END -->
 </body>
 </html>
 

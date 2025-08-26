@@ -1,7 +1,6 @@
 ﻿<!doctype html>
 <html lang="en">
 <head>
-  <meta name="robots" content="index,follow">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
@@ -19,9 +18,10 @@
   <meta name="twitter:card" content="summary_large_image">
 
   <link rel="icon" href="../assets/favicon.ico">
-  <link rel="stylesheet" href="../assets/css/style.css">
+  <link rel="preload" href="../assets/css/style.css" as="style" onload="this.onload=null;this.rel='stylesheet'"><noscript><link rel="stylesheet" href="../assets/css/style.css"></noscript>
 
   <link rel="alternate" type="application/rss+xml" title="Ace Ultra Premium Blog" href="../feed.xml">
+  <meta name="robots" content="index,follow">
 </head>
 <body>
   <header>
@@ -46,9 +46,7 @@
       </ul>
     </nav>
   </header>
-
-  <main>
-    
+<main>
     <h1>Privacy Policy</h1>
 <p>We respect your privacy. This page outlines what we collect, why we collect it, and how we use it.</p>
 
@@ -77,9 +75,7 @@
 <p>We avoid unnecessary tracking. If third-party services are embedded, they may collect their own data per their policies.</p>
 
 <p>Questions? <a href="../contact.html">Contact us</a>.</p>
-  
   </main>
-
 <footer>
   <p>
     <a href="../index.html">Home</a> |
@@ -115,6 +111,20 @@
       });
     })();
   </script>
+<!-- ASD:DARKMODE_START -->
+<script>(function(){
+  function apply(t){document.documentElement.setAttribute('data-theme',t);}
+  var key='asd-theme', saved=localStorage.getItem(key);
+  if(saved){apply(saved);}else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches){apply('dark');}
+  function ensureButton(){
+    if(document.querySelector('.theme-toggle')) return;
+    var b=document.createElement('button'); b.className='theme-toggle'; b.type='button'; b.setAttribute('aria-label','Toggle theme'); b.textContent='☾';
+    b.addEventListener('click',function(){ var cur=document.documentElement.getAttribute('data-theme'); var nxt=cur==='dark'?'light':'dark'; apply(nxt); localStorage.setItem(key,nxt); });
+    document.body.appendChild(b);
+  }
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',ensureButton);}else{ensureButton();}
+})();</script>
+<!-- ASD:DARKMODE_END -->
 </body>
 </html>
 
