@@ -176,6 +176,12 @@ nav a:hover, nav a:focus-visible { text-decoration: underline; outline: none; }
 }
 #site-nav.open { max-height: 60vh; }
 
+/* --- Desktop alignment: push nav to header right --- */
+@media (min-width: 721px){
+  nav { margin-left: auto; }          /* take remaining space on the right */
+  nav ul { justify-content: flex-end; } /* align links to the right edge */
+}
+
 /* Footer */
 footer {
   background: var(--footer);

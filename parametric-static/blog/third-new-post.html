@@ -37,8 +37,13 @@
   <meta name="twitter:card" content="summary_large_image">
 
   <link rel="icon" href="../assets/favicon.ico">
+
+  <!-- Early theme boot (prevents flash); bake.ps1 will skip its own boot if this id exists -->
+  
+
   <link rel="stylesheet" href="../assets/css/style.css">
 
+  <!-- Feeds (RSS is here; bake.ps1 will add Atom if missing without duplicating) -->
   <link rel="alternate" type="application/rss+xml" title="Ace Ultra Premium Blog" href="../feed.xml">
 </head>
 <body>
@@ -70,6 +75,7 @@
     
     
     
+    
     <!-- ASD:BODY:START -->
   <article>
     <h1>Third New Post</h1>
@@ -86,22 +92,30 @@
   
   
   
+  
   </main>
 
-<footer>
-  <p>
-    <a href="../index.html">Home</a> |
-    <a href="../blog/">Blog</a> |
-    <a href="../about.html">About</a> |
-    <a href="../contact.html">Contact</a> |
-    <a href="../legal/privacy.html">Privacy</a> |
-    <a href="../legal/terms.html">Terms</a> |
-    <a href="../sitemap.html">Sitemap</a>
-  </p>
-  <p>&copy; 2025 Ace Ultra Premium. All rights reserved.</p>
-</footer>
+  <footer>
+    <p>
+      <a href="../index.html">Home</a> |
+      <a href="../blog/">Blog</a> |
+      <a href="../about.html">About</a> |
+      <a href="../contact.html">Contact</a> |
+      <a href="../legal/privacy.html">Privacy</a> |
+      <a href="../legal/terms.html">Terms</a> |
+      <a href="../sitemap.html">Sitemap</a>
+    </p>
+    <p>&copy; 2025 Ace Ultra Premium. All rights reserved.</p>
+  </footer>
+
+  <!-- Theme toggle button (uses your .theme-toggle styles) -->
+  <!-- ASD:THEME_TOGGLE -->
+  <button class="theme-toggle" id="themeToggle" type="button" title="Toggle theme" aria-label="Toggle theme">
+    🌙 / ☀
+  </button>
 
   <script>
+    /* Mobile menu */
     (function () {
       var btn = document.getElementById('navToggle');
       var nav = document.getElementById('site-nav');
@@ -122,58 +136,37 @@
         if (e.target && e.target.tagName === 'A') set(false);
       });
     })();
-  </script>
 
-<!-- ASD:THEME_TOGGLE -->
-<script id="asd-theme-handler">
-(function(){
-  function setTheme(t){
-    document.documentElement.setAttribute('data-theme', t);
-    try{ localStorage.setItem('asd-theme', t); }catch(e){}
-  }
-  function toggle(){
-    var cur=document.documentElement.getAttribute('data-theme')||'light';
-    setTheme(cur==='dark'?'light':'dark');
-  }
-  function ready(fn){
-    if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', fn); }
-    else { fn(); }
-  }
-  function findOrCreateButton(){
-    var btn=document.getElementById('theme-toggle');
-    if(!btn){
-      var els=document.getElementsByClassName('theme-toggle');
-      if(els && els.length){ btn=els[0]; }
-    }
-    if(!btn){
-      btn=document.createElement('button');
-      btn.id='theme-toggle';
-      btn.className='theme-toggle';
-      btn.type='button';
-      btn.title='Toggle theme';
-      btn.setAttribute('aria-live','polite');
-      btn.textContent='🌓';
-      document.body.appendChild(btn);
-    }
-    return btn;
-  }
-  ready(function(){
-    try{
-      var btn=findOrCreateButton();
-      if(btn){ btn.addEventListener('click', toggle); }
-      document.addEventListener('keydown', function(e){
-        if((e.ctrlKey||e.metaKey) && e.key==='t'){ e.preventDefault(); toggle(); }
+    /* Theme toggle (works with tokens in style.css) */
+    (function () {
+      var KEY = 'asd-theme';
+      function apply(t) {
+        document.documentElement.setAttribute('data-theme', t);
+        try { localStorage.setItem(KEY, t); } catch (e) {}
+      }
+      function initial() {
+        try {
+          var saved = localStorage.getItem(KEY);
+          if (saved === 'dark' || saved === 'light') return saved;
+        } catch (e) {}
+        return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+      }
+      function ready(fn) {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
+        else fn();
+      }
+      ready(function () {
+        var btn = document.getElementById('themeToggle');
+        if (!btn) return;
+        // Ensure current state is applied (boot already set attribute; this syncs storage if needed)
+        apply(document.documentElement.getAttribute('data-theme') || initial());
+        btn.addEventListener('click', function () {
+          var cur = document.documentElement.getAttribute('data-theme') || 'light';
+          apply(cur === 'dark' ? 'light' : 'dark');
+        });
       });
-      var init=document.documentElement.getAttribute('data-theme')||
-                ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');
-      setTheme(init);
-    }catch(e){}
-  });
-})();
-</script>
+    })();
+  </script>
 </body>
 </html>
-
-
-
 
