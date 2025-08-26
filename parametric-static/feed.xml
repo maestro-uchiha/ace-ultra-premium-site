@@ -1,130 +1,93 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<rss version="2.0">
   <channel>
     <title>Ace Ultra Premium</title>
-    <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/</link>
+    <link>https://maestro-uchiha.github.io/</link>
     <description>Premium {{BRAND}} | quality, reliability, trust.</description>
-    <generator>ASD</generator>
-    <lastBuildDate>Tue, 26 Aug 2025 18:19:31 GMT</lastBuildDate>
-    <atom:link href="https://maestro-uchiha.github.io/ace-ultra-premium-site/feed.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Twelveth Post | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/twelveth-post.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/twelveth-post.html</guid>
       <pubDate>Sun, 24 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>the-seventh-post | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/the-seventh-post.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/the-seventh-post.html</guid>
       <pubDate>Sun, 24 Aug 2025 21:08:55 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>Tenth Post | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/tenth-post.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/tenth-post.html</guid>
       <pubDate>Sat, 23 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>The Eight Post Here | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/the-eight-post-here.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/the-eight-post-here.html</guid>
       <pubDate>Sat, 23 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>The Sixth Post | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/the-sixth-post.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/the-sixth-post.html</guid>
       <pubDate>Sat, 23 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>A Fourth Post | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/a-fourth-post.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/a-fourth-post.html</guid>
       <pubDate>Sat, 23 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>This is another new post | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/this-is-another-new-post.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/this-is-another-new-post.html</guid>
       <pubDate>Sat, 23 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>Third New Post | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/third-new-post.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/third-new-post.html</guid>
       <pubDate>Sat, 23 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>Second New Post | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/second-new-post.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/second-new-post.html</guid>
       <pubDate>Sat, 23 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>Nineth Post | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/nineth-post.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/nineth-post.html</guid>
       <pubDate>Sat, 23 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>Fifth Post Here | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/fifth-post-here.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/fifth-post-here.html</guid>
       <pubDate>Sat, 23 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>Hello ASD | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/hello-asd.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/hello-asd.html</guid>
       <pubDate>Sat, 23 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>Eleventh Post | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/eleventh-post.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/eleventh-post.html</guid>
       <pubDate>Sat, 23 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>old-slug | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/old-slug.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/old-slug.html</guid>
       <pubDate>Fri, 22 Aug 2025 22:07:36 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>Ace Ultra Premium | First Impressions | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/ace-first-impressions.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/ace-first-impressions.html</guid>
       <pubDate>Thu, 21 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>Test Title | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/test-title.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/test-title.html</guid>
       <pubDate>Thu, 21 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
     <item>
       <title>First Impressions of Ace Ultra Premium | Ace Ultra Premium</title>
       <link>https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/first-impressions-of-ace-ultra-premium.html</link>
-      <guid isPermaLink="true">https://maestro-uchiha.github.io/ace-ultra-premium-site/blog/first-impressions-of-ace-ultra-premium.html</guid>
       <pubDate>Thu, 21 Aug 2025 23:00:00 GMT</pubDate>
-      <description>Premium {{BRAND}} | quality, reliability, trust.</description>
     </item>
   </channel>
 </rss>
