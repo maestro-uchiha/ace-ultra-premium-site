@@ -10,57 +10,45 @@
    - Generates sitemap.xml, robots.txt (single Sitemap line)
    - Generates RSS (feed.xml) and Atom (atom.xml)
    - Preserves file timestamps so baking doesn't change dates
-   - PowerShell 5.1-safe (no expression-form `if`)
+   - PowerShell 5.1-safe (no ternary, no expression-form if)
    ============================================ #>
 
 #requires -Version 5.1
 
-# Load shared helpers
 . "$PSScriptRoot\_lib.ps1"
-
-# --- local helpers (PS 5.1-safe) ---
 
 function TryParse-Date([string]$v) {
   if ([string]::IsNullOrWhiteSpace($v)) { return $null }
   [datetime]$out = [datetime]::MinValue
-  $ok = [datetime]::TryParse(
-    $v,
-    [System.Globalization.CultureInfo]::InvariantCulture,
-    [System.Globalization.DateTimeStyles]::AssumeLocal,
-    [ref]$out
-  )
+  $ok = [datetime]::TryParse($v, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeLocal, [ref]$out)
   if ($ok) { return $out } else { return $null }
 }
-
 function Rfc1123([datetime]$dt) {
   if ($null -eq $dt) { $dt = Get-Date }
   if ($dt.Kind -ne [System.DateTimeKind]::Utc) { $dt = $dt.ToUniversalTime() }
   return $dt.ToString("R", [Globalization.CultureInfo]::InvariantCulture)
 }
-
 function Get-MetaDateFromHtml([string]$html) {
   if ([string]::IsNullOrWhiteSpace($html)) { return $null }
-  $m = [regex]::Match($html, '(?is)<meta\s+name\s*=\s*["'']date["'']\s+content\s*=\s*["'']([^"''<>]+)["'']')
+  $m = [regex]::Match($html,'(?is)<meta\s+name\s*=\s*["'']date["'']\s+content\s*=\s*["'']([^"''<>]+)["'']')
   if ($m.Success) {
     $dt = TryParse-Date ($m.Groups[1].Value.Trim())
     if ($dt) { return $dt.ToString('yyyy-MM-dd') }
   }
-  $t = [regex]::Match($html, '(?is)<time[^>]+datetime\s*=\s*["'']([^"''<>]+)["'']')
+  $t = [regex]::Match($html,'(?is)<time[^>]+datetime\s*=\s*["'']([^"''<>]+)["'']')
   if ($t.Success) {
     $dt = TryParse-Date ($t.Groups[1].Value.Trim())
     if ($dt) { return $dt.ToString('yyyy-MM-dd') }
   }
   return $null
 }
-
-function Preserve-FileTimes($path, [datetime]$origCreateUtc, [datetime]$origWriteUtc) {
-  try { (Get-Item $path).CreationTimeUtc  = $origCreateUtc }  catch {}
-  try { (Get-Item $path).LastWriteTimeUtc = $origWriteUtc }   catch {}
+function Preserve-FileTimes($path,[datetime]$origCreateUtc,[datetime]$origWriteUtc){
+  try { (Get-Item $path).CreationTimeUtc  = $origCreateUtc } catch {}
+  try { (Get-Item $path).LastWriteTimeUtc = $origWriteUtc }  catch {}
 }
-
-function Collapse-DoubleSlashesPreserveSchemeLocal([string]$url) {
+function Collapse-DoubleSlashesPreserveSchemeLocal([string]$url){
   if ([string]::IsNullOrWhiteSpace($url)) { return $url }
-  $m = [regex]::Match($url, '^(https?://)(.*)$')
+  $m = [regex]::Match($url,'^(https?://)(.*)$')
   if ($m.Success) {
     $scheme = $m.Groups[1].Value
     $rest   = ($m.Groups[2].Value -replace '/{2,}','/')
@@ -68,82 +56,64 @@ function Collapse-DoubleSlashesPreserveSchemeLocal([string]$url) {
   }
   return ($url -replace '/{2,}','/')
 }
-
-# --- BaseUrl normalization ---
-function Normalize-BaseUrlLocal([string]$b) {
+function Normalize-BaseUrlLocal([string]$b){
   if ([string]::IsNullOrWhiteSpace($b)) { return "/" }
   $x = $b.Trim()
-  $x = $x -replace '^/+(?=https?:)', ''
-  $x = $x -replace '^((?:https?):)/{1,}', '$1//'
-  $m = [regex]::Match($x, '^(https?://)(.+)$')
+  $x = $x -replace '^/+(?=https?:)',''
+  $x = $x -replace '^((?:https?):)/{1,}','$1//'
+  $m = [regex]::Match($x,'^(https?://)(.+)$')
   if ($m.Success) {
-    $scheme = $m.Groups[1].Value
-    $rest   = $m.Groups[2].Value.TrimStart('/')
-    $x = $scheme + $rest
+    $x = $m.Groups[1].Value + $m.Groups[2].Value.TrimStart('/')
     if (-not $x.EndsWith('/')) { $x += '/' }
     return $x
   } else {
-    $x = '/' + $x.Trim('/') + '/'
-    return $x
+    return '/' + $x.Trim('/') + '/'
   }
 }
-
-function Resolve-RedirectTarget([string]$to, [string]$base) {
+function Resolve-RedirectTarget([string]$to,[string]$base){
   if ([string]::IsNullOrWhiteSpace($to)) { return $base }
   $t = $to.Trim()
   if ($t -match '^[a-z]+://') { return Collapse-DoubleSlashesPreserveSchemeLocal($t) }
   if ($t.StartsWith('/')) { return Collapse-DoubleSlashesPreserveSchemeLocal(($base.TrimEnd('/') + $t)) }
   return Collapse-DoubleSlashesPreserveSchemeLocal(($base.TrimEnd('/') + '/' + $t))
 }
-
-function Make-RedirectOutputPath([string]$from, [string]$root) {
+function Make-RedirectOutputPath([string]$from,[string]$root){
   if ([string]::IsNullOrWhiteSpace($from)) { return $null }
   $rel = $from.Trim()
   if ($rel.StartsWith('/')) { $rel = $rel.TrimStart('/') }
   if (-not ($rel -match '\.html?$')) {
-    if ($rel.EndsWith('/')) { $rel = $rel + 'index.html' } else { $rel = $rel + '/index.html' }
+    if ($rel.EndsWith('/')) { $rel += 'index.html' } else { $rel += '/index.html' }
   }
   $out = Join-Path $root $rel
   $dir = Split-Path $out -Parent
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   return $out
 }
-
-function HtmlEscape([string]$s) {
+function HtmlEscape([string]$s){
   if ($null -eq $s) { return '' }
-  $t = $s.Replace('&','&amp;').Replace('<','&lt;').Replace('>','&gt;').Replace('"','&quot;')
-  return $t
+  return $s.Replace('&','&amp;').Replace('<','&lt;').Replace('>','&gt;').Replace('"','&quot;')
 }
-
-function JsString([string]$s) {
+function JsString([string]$s){
   if ($null -eq $s) { return '' }
-  $t = $s.Replace('\','\\').Replace("'", "\'")
-  return $t
+  return $s.Replace('\','\\').Replace("'", "\'")
 }
-
-function Write-RedirectStub([string]$outPath, [string]$absUrl, [int]$code) {
+function Write-RedirectStub([string]$outPath,[string]$absUrl,[int]$code){
   $href = HtmlEscape($absUrl)
   $jsu  = JsString($absUrl)
   $html = @"
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Redirecting…</title>
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><title>Redirecting…</title>
 <meta name="robots" content="noindex">
 <meta http-equiv="refresh" content="0;url=$href">
 <script>location.replace('$jsu');</script>
-</head>
-<body>
-  <!-- ASD:REDIRECT to="$href" code="$code" -->
-  <p>If you are not redirected, <a href="$href">click here</a>.</p>
-</body>
-</html>
+</head><body>
+<!-- ASD:REDIRECT to="$href" code="$code" -->
+<p>If you are not redirected, <a href="$href">click here</a>.</p>
+</body></html>
 "@
   Set-Content -Encoding UTF8 $outPath $html
 }
-
-function Generate-RedirectStubs([string]$redirectsJson, [string]$root, [string]$base) {
+function Generate-RedirectStubs([string]$redirectsJson,[string]$root,[string]$base){
   if (-not (Test-Path $redirectsJson)) { return 0 }
   $items = @()
   try {
@@ -151,21 +121,17 @@ function Generate-RedirectStubs([string]$redirectsJson, [string]$root, [string]$
     if (-not [string]::IsNullOrWhiteSpace($raw)) { $items = $raw | ConvertFrom-Json }
   } catch { Write-Warning "[ASD] redirects.json is invalid; skipping."; return 0 }
   if ($null -eq $items) { return 0 }
-
   $count = 0
   foreach ($r in $items) {
     $enabled = $true
     if ($r.PSObject.Properties.Name -contains 'enabled') { $enabled = [bool]$r.enabled }
     if (-not $enabled) { continue }
-
     $from = $null; $to = $null; $code = 301
     if ($r.PSObject.Properties.Name -contains 'from') { $from = [string]$r.from }
     if ($r.PSObject.Properties.Name -contains 'to')   { $to   = [string]$r.to }
     if ($r.PSObject.Properties.Name -contains 'code') { try { $code = [int]$r.code } catch { $code = 301 } }
-
     if ([string]::IsNullOrWhiteSpace($from) -or [string]::IsNullOrWhiteSpace($to)) { continue }
     if ($from -match '\*') { continue }
-
     $outPath = Make-RedirectOutputPath $from $root
     $abs     = Resolve-RedirectTarget $to $base
     Write-RedirectStub $outPath $abs $code
@@ -173,160 +139,98 @@ function Generate-RedirectStubs([string]$redirectsJson, [string]$root, [string]$
   }
   return $count
 }
-
-function AddOrReplaceMetaRobots([string]$html, [string]$value) {
+function AddOrReplaceMetaRobots([string]$html,[string]$value){
   if ([string]::IsNullOrWhiteSpace($html)) { return $html }
   $rx  = [regex]'(?is)<meta\s+name\s*=\s*["'']robots["''][^>]*>'
   $tag = '<meta name="robots" content="' + (HtmlEscape $value) + '">'
   if ($rx.IsMatch($html)) {
-    return $rx.Replace($html, $tag, 1)
+    return $rx.Replace($html,$tag,1)
   } else {
-    $m = [regex]::Match($html, '(?is)<head[^>]*>')
+    $m = [regex]::Match($html,'(?is)<head[^>]*>')
+    $nl = [Environment]::NewLine
     if ($m.Success) {
       $idx = $m.Index + $m.Length
-      $nl  = [Environment]::NewLine
       return $html.Substring(0,$idx) + $nl + $tag + $nl + $html.Substring($idx)
     }
-    return $tag + [Environment]::NewLine + $html
+    return $tag + $nl + $html
   }
 }
-
-function DetermineRobotsForFile([string]$fullPath, [string]$rawHtml) {
+function DetermineRobotsForFile([string]$fullPath,[string]$rawHtml){
   $name = [IO.Path]::GetFileName($fullPath)
   if ($name -ieq '404.html') { return 'noindex,nofollow' }
   return 'index,follow'
 }
 
-# ------ NEW: cleanup + injectors (feeds + theme + desktop-nav fix) ------
+# --- Injectors & cleaners ---
 
 function Remove-OldThemeArtifacts([string]$html) {
   if ([string]::IsNullOrWhiteSpace($html)) { return $html }
   $patterns = @(
-    '(?is)<style[^>]+id\s*=\s*["'']asd-theme-style["''][^>]*>.*?</style>',
-    '(?is)<style[^>]+id\s*=\s*["'']asd-nav-fix["''][^>]*>.*?</style>',
     '(?is)<script[^>]+id\s*=\s*["'']asd-theme-handler["''][^>]*>.*?</script>',
-    '(?is)<script[^>]+id\s*=\s*["'']asd-theme-boot["''][^>]*>.*?</script>',
-    '(?is)<button[^>]+id\s*=\s*["'']theme-toggle["''][^>]*>.*?</button>'
+    '(?is)<button[^>]+id\s*=\s*["'']asd-theme-toggle["''][^>]*>.*?</button>'
   )
-  foreach($p in $patterns){
-    $html = [regex]::Replace($html, $p, '')
-  }
+  foreach($p in $patterns){ $html = [regex]::Replace($html,$p,'') }
   return $html
 }
-
-function Insert-AfterHeadOpen([string]$html, [string[]]$snippets) {
+function Insert-AfterHeadOpen([string]$html,[string[]]$snips){
   if ([string]::IsNullOrWhiteSpace($html)) { return $html }
-  $m = [regex]::Match($html, '(?is)<head[^>]*>')
+  $m = [regex]::Match($html,'(?is)<head[^>]*>')
   $nl = [Environment]::NewLine
   if ($m.Success) {
     $idx = $m.Index + $m.Length
-    $ins = ($snippets -join $nl) + $nl
-    return $html.Substring(0,$idx) + $nl + $ins + $html.Substring($idx)
-  } else {
-    return (($snippets -join $nl) + $nl + $html)
+    return $html.Substring(0,$idx) + $nl + ([string]::Join($nl,$snips)) + $nl + $html.Substring($idx)
   }
+  return ([string]::Join($nl,$snips)) + $nl + $html
 }
-
-function Insert-BeforeBodyClose([string]$html, [string]$snippet) {
+function Insert-BeforeBodyClose([string]$html,[string]$snippet){
   if ([string]::IsNullOrWhiteSpace($html)) { return $html }
-  $m = [regex]::Match($html, '(?is)</body\s*>')
+  $m = [regex]::Match($html,'(?is)</body\s*>')
   $nl = [Environment]::NewLine
   if ($m.Success) {
     $idx = $m.Index
     return $html.Substring(0,$idx) + $nl + $snippet + $nl + $html.Substring($idx)
-  } else {
-    return $html + $nl + $snippet + $nl
   }
+  return $html + $nl + $snippet + $nl
 }
-
-function Ensure-HeadFeedsThemeBootAndNavFix([string]$html, [string]$prefix, [string]$brand) {
-  $needRss  = (-not ([regex]::IsMatch($html, '(?is)<link[^>]+type\s*=\s*["'']application/rss\+xml["''][^>]*>')))
-  $needAtom = (-not ([regex]::IsMatch($html, '(?is)<link[^>]+type\s*=\s*["'']application/atom\+xml["''][^>]*>')))
-  $needBoot = (-not ([regex]::IsMatch($html, '(?is)id\s*=\s*["'']asd-theme-boot["'']')))
-  $needNavFix = (-not ([regex]::IsMatch($html, '(?is)id\s*=\s*["'']asd-nav-fix["'']')))
-
+function Ensure-HeadFeeds([string]$html,[string]$prefix,[string]$brand){
+  $needRss  = -not ([regex]::IsMatch($html,'(?is)<link[^>]+type\s*=\s*["'']application/rss\+xml["''][^>]*>'))
+  $needAtom = -not ([regex]::IsMatch($html,'(?is)<link[^>]+type\s*=\s*["'']application/atom\+xml["''][^>]*>'))
   $snips = @()
-
   if ($needRss)  { $snips += ('<link rel="alternate" type="application/rss+xml" title="' + (HtmlEscape $brand) + ' RSS" href="' + $prefix + 'feed.xml">') }
   if ($needAtom) { $snips += ('<link rel="alternate" type="application/atom+xml" title="' + (HtmlEscape $brand) + ' Atom" href="' + $prefix + 'atom.xml">') }
-
-  if ($needBoot) {
-    $snips += @'
-<script id="asd-theme-boot">
-(function(){
-  try{
-    var key='asd-theme';
-    var saved=localStorage.getItem(key);
-    var theme=saved ? saved : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    document.documentElement.setAttribute('data-theme', theme);
-  }catch(e){}
-})();
-</script>
-'@
-  }
-
-  # Desktop nav fallback: ensure nav isn't collapsed on wide screens
-  if ($needNavFix) {
-    $snips += @'
-<style id="asd-nav-fix">
-@media (min-width:721px){
-  #site-nav{ max-height: none !important; overflow: visible !important; }
-}
-</style>
-'@
-  }
-
   if ($snips.Count -gt 0) { $html = Insert-AfterHeadOpen $html $snips }
   return $html
 }
-
 function Ensure-BodyThemeToggle([string]$html) {
-  if ([regex]::IsMatch($html, '(?is)ASD:THEME_TOGGLE|id\s*=\s*["'']asd-theme-handler["'']')) { return $html }
-
+  if ([regex]::IsMatch($html,'(?is)id\s*=\s*["'']asd-theme-handler["'']')) { return $html }
   $snippet = @'
 <!-- ASD:THEME_TOGGLE -->
+<button class="asd-theme-toggle" id="asd-theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">🌙 / ☀</button>
 <script id="asd-theme-handler">
 (function(){
+  var KEY='asd-theme';
   function setTheme(t){
     document.documentElement.setAttribute('data-theme', t);
-    try{ localStorage.setItem('asd-theme', t); }catch(e){}
+    try{ localStorage.setItem(KEY, t); }catch(e){}
   }
-  function toggle(){
-    var cur=document.documentElement.getAttribute('data-theme')||'light';
-    setTheme(cur==='dark'?'light':'dark');
+  function initial(){
+    try{
+      var s=localStorage.getItem(KEY);
+      if(s==='dark'||s==='light') return s;
+    }catch(e){}
+    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
   }
-  function ready(fn){
-    if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', fn); }
-    else { fn(); }
-  }
-  function findOrCreateButton(){
-    var btn=document.getElementById('theme-toggle');
-    if(!btn){
-      var els=document.getElementsByClassName('theme-toggle');
-      if(els && els.length){ btn=els[0]; }
-    }
-    if(!btn){
-      btn=document.createElement('button');
-      btn.id='theme-toggle';
-      btn.className='theme-toggle';
-      btn.type='button';
-      btn.title='Toggle theme';
-      btn.setAttribute('aria-live','polite');
-      btn.textContent='🌓';
-      document.body.appendChild(btn);
-    }
-    return btn;
-  }
+  function ready(fn){ if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',fn);} else {fn();} }
   ready(function(){
     try{
-      var btn=findOrCreateButton();
-      if(btn){ btn.addEventListener('click', toggle); }
-      document.addEventListener('keydown', function(e){
-        if((e.ctrlKey||e.metaKey) && e.key==='t'){ e.preventDefault(); toggle(); }
-      });
-      var init=document.documentElement.getAttribute('data-theme')||
-                ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');
-      setTheme(init);
+      var btn=document.getElementById('asd-theme-toggle');
+      if(btn){
+        btn.addEventListener('click', function(){
+          var cur=document.documentElement.getAttribute('data-theme')||'light';
+          setTheme(cur==='dark'?'light':'dark');
+        });
+      }
+      setTheme(document.documentElement.getAttribute('data-theme')||initial());
     }catch(e){}
   });
 })();
@@ -336,20 +240,19 @@ function Ensure-BodyThemeToggle([string]$html) {
 }
 
 # ------ Feed builders (RSS + Atom) ------
-
-function Build-PostList($BlogDir, $Base) {
+function Build-PostList($BlogDir,$Base){
   $list = New-Object System.Collections.ArrayList
   $files = Get-ChildItem -Path $BlogDir -Filter *.html -File | Where-Object { $_.Name -ne 'index.html' -and $_.Name -notmatch '^page-\d+\.html$' }
-  foreach ($f in $files) {
+  foreach($f in $files){
     $html = Get-Content $f.FullName -Raw
     if ($html -match '(?is)<!--\s*ASD:REDIRECT\b') { continue }
 
     # title
     $title = $null
-    $mTitle = [regex]::Match($html, '(?is)<title>(.*?)</title>')
+    $mTitle = [regex]::Match($html,'(?is)<title>(.*?)</title>')
     if ($mTitle.Success) { $title = $mTitle.Groups[1].Value }
     else {
-      $mH1 = [regex]::Match($html, '(?is)<h1[^>]*>(.*?)</h1>')
+      $mH1 = [regex]::Match($html,'(?is)<h1[^>]*>(.*?)</h1>')
       if ($mH1.Success) { $title = $mH1.Groups[1].Value } else { $title = $f.BaseName }
     }
     $title = Normalize-DashesToPipe $title
@@ -360,7 +263,7 @@ function Build-PostList($BlogDir, $Base) {
     if ($metaDate) { $dateText = $metaDate; $dateDt = TryParse-Date $metaDate }
     else { $dateDt = $f.CreationTime; $dateText = $f.CreationTime.ToString('yyyy-MM-dd') }
 
-    # absolute link
+    # link
     $abs = $null
     if ($Base -match '^[a-z]+://') {
       $abs = (New-Object Uri((New-Object Uri($Base)), ('blog/' + $f.Name))).AbsoluteUri
@@ -368,33 +271,30 @@ function Build-PostList($BlogDir, $Base) {
       $abs = ($Base.TrimEnd('/') + '/blog/' + $f.Name)
     }
 
-    $null = $list.Add([pscustomobject]@{
-      Name    = $f.Name
-      Title   = $title
-      Date    = $dateDt
-      DateText= $dateText
-      Link    = Collapse-DoubleSlashesPreserveSchemeLocal $abs
-      Desc    = $null
-      Excerpt = $null
+    [void]$list.Add([pscustomobject]@{
+      Name     = $f.Name
+      Title    = $title
+      Date     = $dateDt
+      DateText = $dateText
+      Link     = Collapse-DoubleSlashesPreserveSchemeLocal $abs
     })
   }
   return ($list | Sort-Object Date -Descending)
 }
-
-function Generate-RssFeed($posts, [string]$base, [string]$title, [string]$desc, [string]$outPath, [int]$maxItems = 20) {
+function Generate-RssFeed($posts,[string]$base,[string]$title,[string]$desc,[string]$outPath,[int]$maxItems=20){
   $lines = New-Object System.Collections.Generic.List[string]
   $chTitle = HtmlEscape $title
   $chDesc  = HtmlEscape $desc
   $chLink  = $base
-  if ($base -match '^[a-z]+://') { $chLink = (New-Object Uri((New-Object Uri($base)), '/')).AbsoluteUri }
-
+  if ($base -match '^[a-z]+://') {
+    $chLink = (New-Object Uri((New-Object Uri($base)), '/')).AbsoluteUri
+  }
   $lines.Add('<?xml version="1.0" encoding="UTF-8"?>') | Out-Null
   $lines.Add('<rss version="2.0">') | Out-Null
   $lines.Add('  <channel>') | Out-Null
   $lines.Add('    <title>' + $chTitle + '</title>') | Out-Null
   $lines.Add('    <link>' + (HtmlEscape $chLink) + '</link>') | Out-Null
   $lines.Add('    <description>' + $chDesc + '</description>') | Out-Null
-
   $count = 0
   foreach ($p in $posts) {
     if ($count -ge $maxItems) { break }
@@ -411,15 +311,18 @@ function Generate-RssFeed($posts, [string]$base, [string]$title, [string]$desc, 
   $lines.Add('</rss>') | Out-Null
   Set-Content -Encoding UTF8 $outPath ($lines -join [Environment]::NewLine)
 }
-
-function Generate-AtomFeed($posts, [string]$base, [string]$title, [string]$desc, [string]$outPath, [int]$maxItems = 20) {
-  $lines = New-Object System.Collections.Generic.List[string]
-  $feedId = $base
-  if ($base -notmatch '^[a-z]+://') { $feedId = 'tag:local,' + (Get-Date -Format 'yyyy-MM-dd') + ':' + $base }
-
+function Generate-AtomFeed($posts,[string]$base,[string]$title,[string]$desc,[string]$outPath,[int]$maxItems=20){
+  $lines   = New-Object System.Collections.Generic.List[string]
+  $feedId  = $base
+  if ($base -notmatch '^[a-z]+://') {
+    $feedId = 'tag:local,' + (Get-Date -Format 'yyyy-MM-dd') + ':' + $base
+  }
   $selfHref = $base
-  if ($base -match '^[a-z]+://') { $selfHref = (New-Object Uri((New-Object Uri($base)),'atom.xml')).AbsoluteUri } else { $selfHref = ($base.TrimEnd('/') + '/atom.xml') }
-
+  if ($base -match '^[a-z]+://') {
+    $selfHref = (New-Object Uri((New-Object Uri($base)),'atom.xml')).AbsoluteUri
+  } else {
+    $selfHref = ($base.TrimEnd('/') + '/atom.xml')
+  }
   $nowIso = (Get-Date).ToUniversalTime().ToString('s') + 'Z'
 
   $lines.Add('<?xml version="1.0" encoding="utf-8"?>') | Out-Null
@@ -448,7 +351,6 @@ function Generate-AtomFeed($posts, [string]$base, [string]$title, [string]$desc,
 }
 
 # ---------------- start ----------------
-
 $paths = Get-ASDPaths
 $cfg   = Get-ASDConfig
 
@@ -481,56 +383,47 @@ if (Test-Path $BlogIndex) {
     if ($html -match '(?is)<!--\s*ASD:REDIRECT\b') { continue }
 
     $title = $null
-    $mTitle = [regex]::Match($html, '(?is)<title>(.*?)</title>')
-    if ($mTitle.Success) { $title = $mTitle.Groups[1].Value }
-    else {
-      $mH1 = [regex]::Match($html, '(?is)<h1[^>]*>(.*?)</h1>')
+    $mTitle = [regex]::Match($html,'(?is)<title>(.*?)</title>')
+    if ($mTitle.Success) {
+      $title = $mTitle.Groups[1].Value
+    } else {
+      $mH1 = [regex]::Match($html,'(?is)<h1[^>]*>(.*?)</h1>')
       if ($mH1.Success) { $title = $mH1.Groups[1].Value } else { $title = $f.BaseName }
     }
     $title = Normalize-DashesToPipe $title
 
-    $metaDate    = Get-MetaDateFromHtml $html
+    $metaDate = Get-MetaDateFromHtml $html
     $dateDisplay = $null
-    $sortKey     = $null
+    $sortKey = $null
     if ($metaDate) { $dateDisplay = $metaDate; $sortKey = TryParse-Date $metaDate }
     else { $dateDisplay = $f.CreationTime.ToString('yyyy-MM-dd'); $sortKey = $f.CreationTime }
 
-    $obj = [pscustomobject]@{
-      Title   = $title
-      Href    = $f.Name
-      DateText= $dateDisplay
-      SortKey = $sortKey
-    }
-    [void]$entries.Add($obj)
+    [void]$entries.Add([pscustomobject]@{ Title=$title; Href=$f.Name; DateText=$dateDisplay; SortKey=$sortKey })
   }
 
   $posts = New-Object System.Collections.Generic.List[string]
   foreach ($e in ($entries | Sort-Object SortKey -Descending)) {
-    $li = '<li><a href="./' + $e.Href + '">' + $e.Title + '</a><small> | ' + $e.DateText + '</small></li>'
-    $posts.Add($li) | Out-Null
+    [void]$posts.Add('<li><a href="./' + $e.Href + '">' + $e.Title + '</a><small> | ' + $e.DateText + '</small></li>')
   }
 
   $bi = Get-Content $BlogIndex -Raw
-  $joined = [string]::Join([Environment]::NewLine, $posts)
+  $joined = [string]::Join([Environment]::NewLine,$posts)
   $pattern = '(?s)<!-- POSTS_START -->.*?<!-- POSTS_END -->'
-  $replacement = @"
-<!-- POSTS_START -->
-$joined
-<!-- POSTS_END -->
-"@
-  $bi = [regex]::Replace($bi, $pattern, $replacement)
+  $replacement = "<!-- POSTS_START -->`n$joined`n<!-- POSTS_END -->"
+  $bi = [regex]::Replace($bi,$pattern,$replacement)
   Set-Content -Encoding UTF8 $BlogIndex $bi
   Write-Host "[ASD] Blog index updated"
 }
 
 # Wrap + inject per page
 Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".html" -and $_.FullName -ne $LayoutPath } | ForEach-Object {
+
+  # Preserve original timestamps
   $it = Get-Item $_.FullName
   $origCreateUtc = $it.CreationTimeUtc
   $origWriteUtc  = $it.LastWriteTimeUtc
 
   $raw = Get-Content $_.FullName -Raw
-
   if ($raw -match '(?is)<!--\s*ASD:REDIRECT\b') {
     Write-Host ("[ASD] Skipped wrapping redirect stub: {0}" -f $_.FullName.Substring($RootDir.Length+1))
     return
@@ -538,34 +431,30 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
 
   $content = Extract-Content $raw
 
-  $tm = [regex]::Match($content, '(?is)<h1[^>]*>(.*?)</h1>')
+  $tm = [regex]::Match($content,'(?is)<h1[^>]*>(.*?)</h1>')
   $pageTitle = $null
   if ($tm.Success) { $pageTitle = $tm.Groups[1].Value } else { $pageTitle = $_.BaseName }
 
   $prefix = Get-RelPrefix -RootDir $RootDir -FilePath $_.FullName
 
   $final = $Layout
-  $final = $final.Replace('{{CONTENT}}', $content)
-  $final = $final.Replace('{{TITLE}}', $pageTitle)
-  $final = $final.Replace('{{BRAND}}', $Brand)
-  $final = $final.Replace('{{DESCRIPTION}}', $Desc)
-  $final = $final.Replace('{{MONEY}}', $Money)
-  $final = $final.Replace('{{YEAR}}', "$Year")
-  $final = $final.Replace('{{PREFIX}}', $prefix)
+  $final = $final.Replace('{{CONTENT}}',$content)
+  $final = $final.Replace('{{TITLE}}',$pageTitle)
+  $final = $final.Replace('{{BRAND}}',$Brand)
+  $final = $final.Replace('{{DESCRIPTION}}',$Desc)
+  $final = $final.Replace('{{MONEY}}',$Money)
+  $final = $final.Replace('{{YEAR}}',"$Year")
+  $final = $final.Replace('{{PREFIX}}',$prefix)
 
   $robotsVal = DetermineRobotsForFile $_.FullName $raw
   $final = AddOrReplaceMetaRobots $final $robotsVal
 
-  # Clean any prior injected blocks from older bakes
+  # Clean old theme bits → inject feeds + theme toggle
   $final = Remove-OldThemeArtifacts $final
-
-  # Inject head bits: feeds + theme boot + desktop nav fix
-  $final = Ensure-HeadFeedsThemeBootAndNavFix $final $prefix $Brand
-
-  # Inject toggle handler (makes/uses .theme-toggle button)
+  $final = Ensure-HeadFeeds $final $prefix $Brand
   $final = Ensure-BodyThemeToggle $final
 
-  # Root-link rewrite + dash normalization
+  # Rewrite root links + normalize dashes
   $final = Rewrite-RootLinks $final $prefix
   $final = Normalize-DashesToPipe $final
 
@@ -575,7 +464,7 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   Write-Host ("[ASD] Wrapped {0} (prefix='{1}')" -f $_.FullName.Substring($RootDir.Length+1), $prefix)
 }
 
-# Sitemap + robots
+# ---- Generate sitemap.xml and robots.txt ----
 Write-Host "[ASD] Using base URL for sitemap: $Base"
 $urls = New-Object System.Collections.Generic.List[object]
 Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
@@ -586,11 +475,15 @@ Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
 
     $rel = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'
     $loc = $null
-    if ($rel -ieq 'index.html') { $loc = $Base }
-    else {
-      $m = [regex]::Match($rel, '^(.+)/index\.html$')
-      if ($m.Success) { $loc = ($Base.TrimEnd('/') + '/' + $m.Groups[1].Value + '/') }
-      else { $loc = ($Base.TrimEnd('/') + '/' + $rel) }
+    if ($rel -ieq 'index.html') {
+      $loc = $Base
+    } else {
+      $m = [regex]::Match($rel,'^(.+)/index\.html$')
+      if ($m.Success) {
+        $loc = ($Base.TrimEnd('/') + '/' + $m.Groups[1].Value + '/')
+      } else {
+        $loc = ($Base.TrimEnd('/') + '/' + $rel)
+      }
     }
     $loc = Collapse-DoubleSlashesPreserveSchemeLocal $loc
     $last = (Get-Item $_.FullName).LastWriteTime.ToString('yyyy-MM-dd')
@@ -658,13 +551,11 @@ Disallow: /
 User-agent: *
 Disallow: /
 "@ }
-
-$robots = [regex]::Replace($robots, '(?im)^\s*Sitemap:\s*.*\r?\n?', '')
+$robots = [regex]::Replace($robots,'(?im)^\s*Sitemap:\s*.*\r?\n?', '')
 $absMap = 'sitemap.xml'
-if ($Base -match '^[a-z]+://') { $absMap = (New-Object Uri((New-Object Uri($Base)), 'sitemap.xml')).AbsoluteUri }
+if ($Base -match '^[a-z]+://') { $absMap = (New-Object Uri((New-Object Uri($Base)),'sitemap.xml')).AbsoluteUri }
 if ($robots -notmatch "\r?\n$") { $robots += [Environment]::NewLine }
 $robots += "Sitemap: $absMap" + [Environment]::NewLine
-
 Set-Content -Encoding UTF8 $robotsPath $robots
 Write-Host "[ASD] robots.txt: Sitemap -> $absMap"
 

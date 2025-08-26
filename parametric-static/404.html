@@ -2,21 +2,6 @@
 <html lang="en">
 <head>
 <link rel="alternate" type="application/atom+xml" title="Ace Ultra Premium Atom" href="atom.xml">
-<script id="asd-theme-boot">
-(function(){
-  try{
-    var key='asd-theme';
-    var saved=localStorage.getItem(key);
-    var theme=saved ? saved : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    document.documentElement.setAttribute('data-theme', theme);
-  }catch(e){}
-})();
-</script>
-<style id="asd-nav-fix">
-@media (min-width:721px){
-  #site-nav{ max-height: none !important; overflow: visible !important; }
-}
-</style>
 
 <meta name="robots" content="noindex,nofollow">
 
@@ -39,7 +24,18 @@
   <link rel="icon" href="assets/favicon.ico">
 
   <!-- Early theme boot (prevents flash); bake.ps1 will skip its own boot if this id exists -->
-  
+  <script id="asd-theme-boot">
+    (function () {
+      try {
+        var key = 'asd-theme';
+        var saved = localStorage.getItem(key);
+        var theme = saved ? saved : (
+          window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        );
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) {}
+    })();
+  </script>
 
   <link rel="stylesheet" href="assets/css/style.css">
 
@@ -76,8 +72,10 @@
     
     
     
+    
     <h1>404 - Not Found</h1>
     <p>That page doesn't exist. <a href="index.html">Return home</a>.</p>
+  
   
   
   
@@ -157,6 +155,38 @@
       });
     })();
   </script>
+
+<!-- ASD:THEME_TOGGLE -->
+<button class="asd-theme-toggle" id="asd-theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">🌙 / ☀</button>
+<script id="asd-theme-handler">
+(function(){
+  var KEY='asd-theme';
+  function setTheme(t){
+    document.documentElement.setAttribute('data-theme', t);
+    try{ localStorage.setItem(KEY, t); }catch(e){}
+  }
+  function initial(){
+    try{
+      var s=localStorage.getItem(KEY);
+      if(s==='dark'||s==='light') return s;
+    }catch(e){}
+    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+  }
+  function ready(fn){ if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',fn);} else {fn();} }
+  ready(function(){
+    try{
+      var btn=document.getElementById('asd-theme-toggle');
+      if(btn){
+        btn.addEventListener('click', function(){
+          var cur=document.documentElement.getAttribute('data-theme')||'light';
+          setTheme(cur==='dark'?'light':'dark');
+        });
+      }
+      setTheme(document.documentElement.getAttribute('data-theme')||initial());
+    }catch(e){}
+  });
+})();
+</script>
 </body>
 </html>
 
