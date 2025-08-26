@@ -38,7 +38,7 @@
   </script>
 
   <link rel="stylesheet" href="assets/css/style.css">
-  <!-- RSS present here; bake.ps1 will add Atom if missing -->
+  <!-- RSS present; bake.ps1 will add Atom if missing -->
   <link rel="alternate" type="application/rss+xml" title="Ace Ultra Premium Blog" href="feed.xml">
 </head>
 <body>
@@ -73,6 +73,7 @@
     
     
     
+    
     <h1>Contact Ace Ultra Premium</h1>
 <p>Need help or have a question? We’re happy to hear from you.</p>
 
@@ -86,6 +87,7 @@
 </ul>
 
 <p class="cta"><a href="https://acecartstore.com">Back to the official store</a></p>
+  
   
   
   
@@ -108,8 +110,14 @@
     <p>&copy; 2025 Ace Ultra Premium. All rights reserved.</p>
   </footer>
 
-  <!-- Single rectangular theme toggle -->
-  <button class="asd-theme-toggle" id="asd-theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">
+  <!-- Single rectangular theme toggle (inline onclick so it ALWAYS works) -->
+  <button
+    class="asd-theme-toggle"
+    id="asd-theme-toggle"
+    type="button"
+    title="Toggle theme"
+    aria-label="Toggle theme"
+    onclick="(function(d){var k='asd-theme';var cur=d.getAttribute('data-theme')||'light';var nxt=(cur==='dark'?'light':'dark');d.setAttribute('data-theme',nxt);try{localStorage.setItem(k,nxt);}catch(e){} })(document.documentElement)">
     🌙 / ☀
   </button>
 
@@ -133,32 +141,6 @@
       });
       nav.addEventListener('click', function (e) {
         if (e.target && e.target.tagName === 'A') set(false);
-      });
-    })();
-
-    /* Theme toggle (rectangular) */
-    (function () {
-      var KEY = 'asd-theme';
-      function apply(t) {
-        document.documentElement.setAttribute('data-theme', t);
-        try { localStorage.setItem(KEY, t); } catch (e) {}
-      }
-      function initial() {
-        try {
-          var s = localStorage.getItem(KEY);
-          if (s === 'dark' || s === 'light') return s;
-        } catch (e) {}
-        return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
-      }
-      function ready(fn){ if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn); else fn(); }
-      ready(function(){
-        var btn = document.getElementById('asd-theme-toggle');
-        if (!btn) return;
-        apply(document.documentElement.getAttribute('data-theme') || initial());
-        btn.addEventListener('click', function(){
-          var cur = document.documentElement.getAttribute('data-theme') || 'light';
-          apply(cur === 'dark' ? 'light' : 'dark');
-        });
       });
     })();
   </script>

@@ -4,7 +4,7 @@
    - Uses config.json as the single source of truth
    - Generates instant redirect stubs from redirects.json
    - Wraps HTML with layout.html and {{PREFIX}} (except redirect stubs)
-   - Rewrites root-absolute links -> prefix-relative
+   - Rewrites root-absolute links -> prefix-relative (except 404)
    - Normalizes dashes to "|"
    - Rebuilds /blog/ index (stable dates; respects <meta name="date">)
    - Generates sitemap.xml, robots.txt (single Sitemap line)
@@ -107,7 +107,7 @@ function AddOrReplaceMetaRobots([string]$html,[string]$value){
 }
 function DetermineRobotsForFile([string]$fullPath,[string]$rawHtml){ if(([IO.Path]::GetFileName($fullPath)) -ieq '404.html'){'noindex,nofollow'} else {'index,follow'} }
 
-# --- Head feed injector (no theme injection here) ---
+# --- Head feed injector ---
 function Insert-AfterHeadOpen([string]$html,[string[]]$snips){
   if([string]::IsNullOrWhiteSpace($html)){return $html}
   $m=[regex]::Match($html,'(?is)<head[^>]*>'); $nl=[Environment]::NewLine
@@ -122,6 +122,34 @@ function Ensure-HeadFeeds([string]$html,[string]$prefix,[string]$brand){
   if($needAtom){ $snips += ('<link rel="alternate" type="application/atom+xml" title="' + (HtmlEscape $brand) + ' Atom" href="' + $prefix + 'atom.xml">') }
   if($snips.Count -gt 0){ $html = Insert-AfterHeadOpen $html $snips }
   $html
+}
+
+# --- 404 helpers: keep assets/root links absolute so CSS loads under any path ---
+function Get-RootPrefixFromBase([string]$base){
+  if([string]::IsNullOrWhiteSpace($base)){ return "/" }
+  if($base -match '^[a-z]+://'){
+    try{
+      $u = New-Object System.Uri($base)
+      $p = $u.AbsolutePath
+      if([string]::IsNullOrWhiteSpace($p)){ $p = "/" }
+      if(-not $p.StartsWith("/")){ $p = "/" + $p }
+      if(-not $p.EndsWith("/")){ $p = $p + "/" }
+      return $p
+    } catch { return "/" }
+  } else {
+    # rooted path form like "/repo/" or "/"
+    $x = "/" + ($base.Trim() -replace '^/+','') 
+    if(-not $x.EndsWith("/")){ $x += "/" }
+    return $x
+  }
+}
+function Fix-404Links([string]$html,[string]$base){
+  $root = Get-RootPrefixFromBase $base
+  # assets (href/src/content) starting with {{PREFIX}}assets/ or assets/ -> root/assets/
+  $html = [regex]::Replace($html,'(?i)\b(href|src|content)\s*=\s*"((\{\{PREFIX\}\})?assets/)', '$1="' + $root + 'assets/')
+  # canonical -> root index
+  $html = [regex]::Replace($html,'(?i)<link\s+rel\s*=\s*"canonical"\s+href\s*=\s*"[^"]*"\s*>','<link rel="canonical" href="' + $root + 'index.html">')
+  return $html
 }
 
 # ------ Feed builders (RSS + Atom) ------
@@ -209,7 +237,7 @@ if($made -gt 0){Write-Host "[ASD] Redirect stubs generated: $made"}
 if(-not (Test-Path $LayoutPath)){Write-Error "[ASD] layout.html not found at $LayoutPath"; exit 1}
 $Layout=Get-Content $LayoutPath -Raw
 
-# Blog index
+# Blog index (no accumulating blank lines)
 $BlogIndex=Join-Path $BlogDir "index.html"
 if(Test-Path $BlogIndex){
   $entries=New-Object System.Collections.ArrayList
@@ -224,7 +252,7 @@ if(Test-Path $BlogIndex){
     $title=Normalize-DashesToPipe $title
     $metaDate=Get-MetaDateFromHtml $html
     if($metaDate){$dateDisplay=$metaDate; $sortKey=TryParse-Date $metaDate}else{$dateDisplay=$f.CreationTime.ToString('yyyy-MM-dd'); $sortKey=$f.CreationTime}
-    [void]$entries.Add([pscustomobject]@{Title=$title;Href=$f.Name;DateText=$dateDisplay;SortKey=$sortKey})
+    [void]$entries.Add([pscustomobject]@{ Title=$title; Href=$f.Name; DateText=$dateDisplay; SortKey=$sortKey })
   }
   $posts=New-Object System.Collections.Generic.List[string]
   foreach($e in ($entries | Sort-Object SortKey -Descending)){
@@ -233,7 +261,7 @@ if(Test-Path $BlogIndex){
   $bi=Get-Content $BlogIndex -Raw
   $joined=[string]::Join([Environment]::NewLine,$posts)
   $pattern='(?s)<!-- POSTS_START -->.*?<!-- POSTS_END -->'
-  $replacement="<!-- POSTS_START -->`n$joined`n<!-- POSTS_END -->"
+  $replacement='<!-- POSTS_START -->' + $joined + '<!-- POSTS_END -->'   # no extra newlines
   $bi=[regex]::Replace($bi,$pattern,$replacement)
   Set-Content -Encoding UTF8 $BlogIndex $bi
   Write-Host "[ASD] Blog index updated"
@@ -254,11 +282,18 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   $final=$Layout.Replace('{{CONTENT}}',$content).Replace('{{TITLE}}',$pageTitle).Replace('{{BRAND}}',$Brand).Replace('{{DESCRIPTION}}',$Desc).Replace('{{MONEY}}',$Money).Replace('{{YEAR}}',"$Year").Replace('{{PREFIX}}',$prefix)
   $final=AddOrReplaceMetaRobots $final (DetermineRobotsForFile $_.FullName $raw)
 
-  # Add feed links if missing
+  # Feeds
   $final=Ensure-HeadFeeds $final $prefix $Brand
 
-  # Rewrite links + normalize dashes
-  $final=Rewrite-RootLinks $final $prefix
+  # 404 special: keep assets/canonical rooted; skip prefix rewrite
+  $name=[IO.Path]::GetFileName($_.FullName)
+  if($name -ieq '404.html'){
+    $final = Fix-404Links $final $Base
+  } else {
+    $final = Rewrite-RootLinks $final $prefix
+  }
+
+  # Normalize dashes
   $final=Normalize-DashesToPipe $final
 
   Set-Content -Encoding UTF8 $_.FullName $final
