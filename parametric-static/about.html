@@ -23,8 +23,8 @@
 
   <link rel="icon" href="assets/favicon.ico">
 
-  <!-- Early theme boot (prevents flash); bake.ps1 will skip its own boot if this id exists -->
-  <script id="asd-theme-boot">
+  <!-- Early theme boot (prevents flash) -->
+  <script>
     (function () {
       try {
         var key = 'asd-theme';
@@ -38,8 +38,7 @@
   </script>
 
   <link rel="stylesheet" href="assets/css/style.css">
-
-  <!-- Feeds (RSS is here; bake.ps1 will add Atom if missing without duplicating) -->
+  <!-- RSS present here; bake.ps1 will add Atom if missing -->
   <link rel="alternate" type="application/rss+xml" title="Ace Ultra Premium Blog" href="feed.xml">
 </head>
 <body>
@@ -73,6 +72,7 @@
     
     
     
+    
     <h1>About Ace Ultra Premium</h1>
 <p>We believe premium should feel effortless. That means thoughtful materials, clear communication, and durable results.</p>
 
@@ -87,6 +87,7 @@
 <p>A compact, reliable experience|from the first visit to years down the line. The details matter; we sweat them so you don’t have to.</p>
 
 <p><a href="contact.html">Reach out</a> or browse the <a href="blog/">blog</a> for the latest notes.</p>
+  
   
   
   
@@ -108,9 +109,8 @@
     <p>&copy; 2025 Ace Ultra Premium. All rights reserved.</p>
   </footer>
 
-  <!-- Theme toggle button (uses your .theme-toggle styles) -->
-  <!-- ASD:THEME_TOGGLE -->
-  <button class="theme-toggle" id="themeToggle" type="button" title="Toggle theme" aria-label="Toggle theme">
+  <!-- Single rectangular theme toggle -->
+  <button class="asd-theme-toggle" id="asd-theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">
     🌙 / ☀
   </button>
 
@@ -137,7 +137,7 @@
       });
     })();
 
-    /* Theme toggle (works with tokens in style.css) */
+    /* Theme toggle (rectangular) */
     (function () {
       var KEY = 'asd-theme';
       function apply(t) {
@@ -146,59 +146,23 @@
       }
       function initial() {
         try {
-          var saved = localStorage.getItem(KEY);
-          if (saved === 'dark' || saved === 'light') return saved;
+          var s = localStorage.getItem(KEY);
+          if (s === 'dark' || s === 'light') return s;
         } catch (e) {}
         return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
       }
-      function ready(fn) {
-        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
-        else fn();
-      }
-      ready(function () {
-        var btn = document.getElementById('themeToggle');
+      function ready(fn){ if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn); else fn(); }
+      ready(function(){
+        var btn = document.getElementById('asd-theme-toggle');
         if (!btn) return;
-        // Ensure current state is applied (boot already set attribute; this syncs storage if needed)
         apply(document.documentElement.getAttribute('data-theme') || initial());
-        btn.addEventListener('click', function () {
+        btn.addEventListener('click', function(){
           var cur = document.documentElement.getAttribute('data-theme') || 'light';
           apply(cur === 'dark' ? 'light' : 'dark');
         });
       });
     })();
   </script>
-
-<!-- ASD:THEME_TOGGLE -->
-<button class="asd-theme-toggle" id="asd-theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">🌙 / ☀</button>
-<script id="asd-theme-handler">
-(function(){
-  var KEY='asd-theme';
-  function setTheme(t){
-    document.documentElement.setAttribute('data-theme', t);
-    try{ localStorage.setItem(KEY, t); }catch(e){}
-  }
-  function initial(){
-    try{
-      var s=localStorage.getItem(KEY);
-      if(s==='dark'||s==='light') return s;
-    }catch(e){}
-    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
-  }
-  function ready(fn){ if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',fn);} else {fn();} }
-  ready(function(){
-    try{
-      var btn=document.getElementById('asd-theme-toggle');
-      if(btn){
-        btn.addEventListener('click', function(){
-          var cur=document.documentElement.getAttribute('data-theme')||'light';
-          setTheme(cur==='dark'?'light':'dark');
-        });
-      }
-      setTheme(document.documentElement.getAttribute('data-theme')||initial());
-    }catch(e){}
-  });
-})();
-</script>
 </body>
 </html>
 

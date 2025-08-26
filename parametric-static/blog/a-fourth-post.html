@@ -23,8 +23,8 @@
 
   <link rel="icon" href="../assets/favicon.ico">
 
-  <!-- Early theme boot (prevents flash); bake.ps1 will skip its own boot if this id exists -->
-  <script id="asd-theme-boot">
+  <!-- Early theme boot (prevents flash) -->
+  <script>
     (function () {
       try {
         var key = 'asd-theme';
@@ -38,8 +38,7 @@
   </script>
 
   <link rel="stylesheet" href="../assets/css/style.css">
-
-  <!-- Feeds (RSS is here; bake.ps1 will add Atom if missing without duplicating) -->
+  <!-- RSS present here; bake.ps1 will add Atom if missing -->
   <link rel="alternate" type="application/rss+xml" title="Ace Ultra Premium Blog" href="../feed.xml">
 </head>
 <body>
@@ -73,6 +72,7 @@
     
     
     
+    
     <article>
     <h1>A Fourth Post</h1>
 <!-- ASD:POST_TOP_START -->
@@ -83,6 +83,7 @@
 <!-- ASD:POST_BOTTOM_START -->
 <hr><div class="share-row">Share: <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fmaestro-uchiha.github.io%2Face-ultra-premium-site%2Fblog%2Fa-fourth-post.html&text=A%20Fourth%20Post" target="_blank" rel="noopener">X/Twitter</a> · <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fmaestro-uchiha.github.io%2Face-ultra-premium-site%2Fblog%2Fa-fourth-post.html" target="_blank" rel="noopener">LinkedIn</a> · <a href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fmaestro-uchiha.github.io%2Face-ultra-premium-site%2Fblog%2Fa-fourth-post.html" target="_blank" rel="noopener">Facebook</a></div><section class="related"><h2>Related posts</h2><ul class="posts"><li><a href="../blog/twelveth-post.html">Twelveth Post | Ace Ultra Premium</a><small> | 2025-08-25</small></li><li><a href="../blog/the-seventh-post.html">the-seventh-post | Ace Ultra Premium</a><small> | 2025-08-24</small></li><li><a href="../blog/tenth-post.html">Tenth Post | Ace Ultra Premium</a><small> | 2025-08-24</small></li></ul></section><p class="back-blog"><a href="../blog/">← Back to all posts</a></p>
 <!-- ASD:POST_BOTTOM_END -->
+  
   
   
   
@@ -104,9 +105,8 @@
     <p>&copy; 2025 Ace Ultra Premium. All rights reserved.</p>
   </footer>
 
-  <!-- Theme toggle button (uses your .theme-toggle styles) -->
-  <!-- ASD:THEME_TOGGLE -->
-  <button class="theme-toggle" id="themeToggle" type="button" title="Toggle theme" aria-label="Toggle theme">
+  <!-- Single rectangular theme toggle -->
+  <button class="asd-theme-toggle" id="asd-theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">
     🌙 / ☀
   </button>
 
@@ -133,7 +133,7 @@
       });
     })();
 
-    /* Theme toggle (works with tokens in style.css) */
+    /* Theme toggle (rectangular) */
     (function () {
       var KEY = 'asd-theme';
       function apply(t) {
@@ -142,59 +142,23 @@
       }
       function initial() {
         try {
-          var saved = localStorage.getItem(KEY);
-          if (saved === 'dark' || saved === 'light') return saved;
+          var s = localStorage.getItem(KEY);
+          if (s === 'dark' || s === 'light') return s;
         } catch (e) {}
         return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
       }
-      function ready(fn) {
-        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
-        else fn();
-      }
-      ready(function () {
-        var btn = document.getElementById('themeToggle');
+      function ready(fn){ if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn); else fn(); }
+      ready(function(){
+        var btn = document.getElementById('asd-theme-toggle');
         if (!btn) return;
-        // Ensure current state is applied (boot already set attribute; this syncs storage if needed)
         apply(document.documentElement.getAttribute('data-theme') || initial());
-        btn.addEventListener('click', function () {
+        btn.addEventListener('click', function(){
           var cur = document.documentElement.getAttribute('data-theme') || 'light';
           apply(cur === 'dark' ? 'light' : 'dark');
         });
       });
     })();
   </script>
-
-<!-- ASD:THEME_TOGGLE -->
-<button class="asd-theme-toggle" id="asd-theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">🌙 / ☀</button>
-<script id="asd-theme-handler">
-(function(){
-  var KEY='asd-theme';
-  function setTheme(t){
-    document.documentElement.setAttribute('data-theme', t);
-    try{ localStorage.setItem(KEY, t); }catch(e){}
-  }
-  function initial(){
-    try{
-      var s=localStorage.getItem(KEY);
-      if(s==='dark'||s==='light') return s;
-    }catch(e){}
-    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
-  }
-  function ready(fn){ if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',fn);} else {fn();} }
-  ready(function(){
-    try{
-      var btn=document.getElementById('asd-theme-toggle');
-      if(btn){
-        btn.addEventListener('click', function(){
-          var cur=document.documentElement.getAttribute('data-theme')||'light';
-          setTheme(cur==='dark'?'light':'dark');
-        });
-      }
-      setTheme(document.documentElement.getAttribute('data-theme')||initial());
-    }catch(e){}
-  });
-})();
-</script>
 </body>
 </html>
 
