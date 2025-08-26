@@ -1,16 +1,16 @@
 ﻿<!doctype html>
 <html lang="en">
 <head>
-  <meta name="robots" content="noindex,nofollow">
+  <meta name="robots" content="index,follow">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <title>404 - Not Found | Ace Ultra Premium</title>
+  <title>Search | Ace Ultra Premium</title>
   <meta name="description" content="Premium {{BRAND}} | quality, reliability, trust.">
   <link rel="canonical" href="index.html">
 
   <!-- Open Graph -->
-  <meta property="og:title" content="404 - Not Found | Ace Ultra Premium">
+  <meta property="og:title" content="Search | Ace Ultra Premium">
   <meta property="og:description" content="Premium {{BRAND}} | quality, reliability, trust.">
   <meta property="og:image" content="assets/img/og.jpg">
   <meta property="og:type" content="website">
@@ -49,8 +49,50 @@
 
   <main>
     
-    <h1>404 - Not Found</h1>
-    <p>That page doesn't exist. <a href="index.html">Return home</a>.</p>
+    <h1>Search</h1>
+
+<div class="search-box">
+  <input id="q" type="search" placeholder="Type to search posts..." aria-label="Search posts">
+  <p class="muted" id="hint">Press Enter to open the first result</p>
+</div>
+
+<div id="results" class="search-results" aria-live="polite"></div>
+
+<script>
+(function(){
+  var idx = [], elQ = document.getElementById('q'), elR = document.getElementById('results');
+  function esc(s){return (s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+  function norm(s){return (s||'').toLowerCase()}
+  function render(list){
+    if(!list.length){ elR.innerHTML = '<p class="muted">No matches.</p>'; return; }
+    var out = ['<ul class="posts">'];
+    for(var i=0;i<list.length;i++){
+      var it=list[i];
+      out.push('<li><a href="'+esc(it.url)+'">'+esc(it.title)+'</a><small> | '+esc(it.date)+'</small><div class="muted">'+esc(it.desc||"")+'</div></li>');
+    }
+    out.push('</ul>'); elR.innerHTML = out.join('');
+  }
+  function search(q){
+    q = norm(q);
+    if(!q){ render([]); return; }
+    var terms = q.split(/\s+/).filter(Boolean);
+    var hits = idx.filter(function(it){
+      var hay = norm(it.title+' '+(it.desc||'')+' '+(it.tags||''));
+      for(var t=0;t<terms.length;t++){ if(hay.indexOf(terms[t])===-1) return false; }
+      return true;
+    });
+    render(hits.slice(0,50));
+  }
+  function firstOpen(e){
+    if(e.key==='Enter'){
+      var a = elR.querySelector('a'); if(a){ location.href=a.href; }
+    }
+  }
+  fetch('/assets/search-index.json').then(function(r){return r.json()}).then(function(js){ idx=js||[]; });
+  elQ.addEventListener('input', function(){ search(this.value) });
+  elQ.addEventListener('keydown', firstOpen);
+})();
+</script>
   
   </main>
 

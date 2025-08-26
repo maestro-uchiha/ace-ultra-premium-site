@@ -1,38 +1,40 @@
-<#
+﻿<#
   post-wizard.ps1
   Interactive helper to run common ASD tasks.
   - PowerShell 5.1 compatible
   - Reads config.json via _lib.ps1 (single source of truth)
 #>
 
+#requires -Version 5.1
 [CmdletBinding()]
 param()
 
-# Resolve script locations up-front (no reliance on $S.PS)
 $ScriptsDir = Split-Path -Parent $PSCommandPath
-
-# Load helpers (single source of truth)
 . (Join-Path $ScriptsDir "_lib.ps1")
 
-Set-StrictMode -Version Latest
+# PS 5.1-safe strict mode
+Set-StrictMode -Version 2.0
 
-# Paths + config (ensures defaults and creates config.json if missing)
+# Paths + config
 $S   = Get-ASDPaths
 $cfg = Get-ASDConfig -Root $S.Root
 
-function Ask($prompt, $default = "") {
-  if ([string]::IsNullOrWhiteSpace($default)) {
-    return Read-Host $prompt
+function Ask {
+  param([string]$Prompt, [string]$Default = "")
+  if ([string]::IsNullOrWhiteSpace($Default)) {
+    return (Read-Host $Prompt)
   } else {
-    $v = Read-Host "$prompt [$default]"
-    if ([string]::IsNullOrWhiteSpace($v)) { return $default } else { return $v }
+    $v = Read-Host ("{0} [{1}]" -f $Prompt, $Default)
+    if ([string]::IsNullOrWhiteSpace($v)) { return $Default } else { return $v }
   }
 }
 
-function Ask-YesNo($prompt, [bool]$defaultNo = $true) {
-  $suffix = if ($defaultNo) { "(y/N)" } else { "(Y/n)" }
-  $ans = Read-Host "$prompt $suffix"
-  if ([string]::IsNullOrWhiteSpace($ans)) { return -not $defaultNo }
+function Ask-YesNo {
+  param([string]$Prompt, [bool]$DefaultNo = $true)
+  $suffix = ""
+  if ($DefaultNo) { $suffix = "(y/N)" } else { $suffix = "(Y/n)" }
+  $ans = Read-Host ("{0} {1}" -f $Prompt, $suffix)
+  if ([string]::IsNullOrWhiteSpace($ans)) { return (-not $DefaultNo) }
   return ($ans -match '^[Yy]')
 }
 
@@ -53,18 +55,13 @@ function Do-NewPost {
   $desc  = Ask "Description" ""
   $when  = Ask "ISO date (yyyy-MM-dd) or blank for today" ""
 
-  $params = @{ Title = $title; Slug = $slug; Description = $desc }
   $newPostPath = Join-Path $ScriptsDir "new-post.ps1"
-
   if (-not [string]::IsNullOrWhiteSpace($when)) {
     try { $d = [datetime]::Parse($when) } catch { $d = Get-Date }
-    try {
-      & $newPostPath @params -Date $d
-    } catch {
-      & $newPostPath @params
-    }
+    try { & $newPostPath -Title $title -Slug $slug -Description $desc -Date $d }
+    catch { & $newPostPath -Title $title -Slug $slug -Description $desc }
   } else {
-    & $newPostPath @params
+    & $newPostPath -Title $title -Slug $slug -Description $desc
   }
 }
 
@@ -120,24 +117,13 @@ function Do-Redirects {
     '1' {
       $from = Ask "From path (e.g. /legacy or /old/*)"
       $to   = Ask "To URL or path (e.g. /blog/new.html)"
-      $code = Ask "HTTP code (301 or 302)" "301"
+      $code = Ask "HTTP code (301, 302, 307, 308)" "301"
       & $redir -Add -From $from -To $to -Code ([int]$code)
     }
-    '2' {
-      $i = Ask "Index to remove"
-      & $redir -Remove -Index ([int]$i)
-    }
-    '3' {
-      $i = Ask "Index to disable"
-      & $redir -Disable -Index ([int]$i)
-    }
-    '4' {
-      $i = Ask "Index to enable"
-      & $redir -Enable -Index ([int]$i)
-    }
-    '5' {
-      & $redir -List
-    }
+    '2' { $i = Ask "Index to remove";   & $redir -Remove  -Index ([int]$i) }
+    '3' { $i = Ask "Index to disable";  & $redir -Disable -Index ([int]$i) }
+    '4' { $i = Ask "Index to enable";   & $redir -Enable  -Index ([int]$i) }
+    '5' { & $redir -List }
     default { Write-Host "Invalid choice." }
   }
 }
@@ -147,15 +133,24 @@ function Do-BuildPagination {
   & (Join-Path $ScriptsDir "build-blog-index.ps1") -PageSize ([int]$size)
 }
 
-function Do-Bake       { & (Join-Path $ScriptsDir "bake.ps1") }
-function Do-BuildBake  { & (Join-Path $ScriptsDir "build-and-bake.ps1") }
-function Do-CheckLinks { & (Join-Path $ScriptsDir "check-links.ps1") }
+# --- Run heavy scripts in a clean child PowerShell to isolate parsing/strict-mode ---
+function Invoke-Clean {
+  param([string]$ScriptFullPath, [string[]]$Args = @())
+  $psiArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File', $ScriptFullPath) + $Args
+  & powershell.exe @psiArgs
+  $code = $LASTEXITCODE
+  if ($code -ne 0) {
+    Write-Error ("Child process exited with code {0} running {1}" -f $code, $ScriptFullPath)
+  }
+}
+
+function Do-Bake       { Invoke-Clean (Join-Path $ScriptsDir "bake.ps1") }
+function Do-BuildBake  { Invoke-Clean (Join-Path $ScriptsDir "build-and-bake.ps1") }
+function Do-CheckLinks { Invoke-Clean (Join-Path $ScriptsDir "check-links.ps1") }
 
 function Do-ListPosts {
   if (-not (Test-Path $S.Blog)) { Write-Host "(no blog/ folder yet)"; return }
-  Get-ChildItem -Path $S.Blog -Filter *.html -File | ForEach-Object {
-    Write-Host $_.Name
-  }
+  Get-ChildItem -Path $S.Blog -Filter *.html -File | ForEach-Object { Write-Host $_.Name }
 }
 
 function Do-OpenPost {
@@ -163,12 +158,8 @@ function Do-OpenPost {
   $p = Join-Path $S.Blog ($slug + ".html")
   if (Test-Path $p) {
     Write-Host "[ASD] Opening $p in VS Code..."
-    try {
-      Start-Process code -ArgumentList @("--reuse-window","`"$p`"") -ErrorAction Stop
-    } catch {
-      Write-Warning "VS Code not found on PATH. Opening in Notepad."
-      notepad.exe $p
-    }
+    try { Start-Process code -ArgumentList @("--reuse-window","`"$p`"") -ErrorAction Stop }
+    catch { Write-Warning "VS Code not found on PATH. Opening in Notepad."; notepad.exe $p }
   } else {
     Write-Warning "Post not found: $p"
   }
@@ -178,17 +169,12 @@ function Do-EditConfig {
   $cfgPath = Join-Path $S.Root "config.json"
   if (-not (Test-Path $cfgPath)) { $null = Get-ASDConfig -Root $S.Root } # ensure exists
   Write-Host "[ASD] Opening $cfgPath..."
-  try {
-    Start-Process code -ArgumentList @("--reuse-window","`"$cfgPath`"") -ErrorAction Stop
-  } catch {
-    notepad.exe $cfgPath
-  }
+  try { Start-Process code -ArgumentList @("--reuse-window","`"$cfgPath`"") -ErrorAction Stop }
+  catch { notepad.exe $cfgPath }
 }
 
-# ------- Git helpers (robust; path-safe) -------
-function Test-GitAvailable {
-  try { $null = (& git --version) 2>$null; return ($LASTEXITCODE -eq 0) } catch { return $false }
-}
+# ------- Git helpers -------
+function Test-GitAvailable { try { $null = (& git --version) 2>$null; return ($LASTEXITCODE -eq 0) } catch { return $false } }
 function Get-GitRoot {
   try {
     $root = (& git rev-parse --show-toplevel) 2>$null
@@ -196,15 +182,9 @@ function Get-GitRoot {
   } catch {}
   return $null
 }
-function Git-Run([string[]]$GitArgs, [switch]$Capture) {
-  if ($Capture) {
-    $out = & git @GitArgs 2>&1
-    $code = $LASTEXITCODE
-    return @{ code = $code; out = $out }
-  } else {
-    & git @GitArgs
-    return @{ code = $LASTEXITCODE; out = $null }
-  }
+function Git-Run { param([string[]]$GitArgs,[switch]$Capture)
+  if ($Capture) { $out = & git @GitArgs 2>&1; return @{ code = $LASTEXITCODE; out = $out } }
+  else          { & git @GitArgs;         return @{ code = $LASTEXITCODE; out = $null } }
 }
 function Do-CommitAll {
   if (-not (Test-GitAvailable)) { Write-Error "git is not installed or not on PATH."; return }
@@ -218,9 +198,7 @@ function Do-CommitAll {
       $bm = Git-Run -GitArgs @('branch','-M','main') -Capture
       if ($bm.code -ne 0) { Write-Warning "Could not set default branch to 'main':`n$($bm.out)" }
       Write-Host "[ASD] Git repository initialized at $($S.Root)."
-    } finally {
-      Pop-Location
-    }
+    } finally { Pop-Location }
     $repoRoot = $S.Root
   }
 
@@ -229,7 +207,6 @@ function Do-CommitAll {
     & git status
     $add = Git-Run -GitArgs @('add','-A','--','.') -Capture
     if ($add.code -ne 0) { Write-Error "git add failed:`n$($add.out)"; return }
-
     $staged = (& git diff --cached --name-only) 2>$null
     if ([string]::IsNullOrWhiteSpace($staged)) { Write-Host "[ASD] Nothing staged; nothing to commit."; return }
 
@@ -244,22 +221,16 @@ function Do-CommitAll {
 
     if (Ask-YesNo "Push to remote? (requires your git remote auth)") {
       $push = Git-Run -GitArgs @('push') -Capture
-      if ($push.code -ne 0) {
-        Write-Warning "git push failed:`n$($push.out)"
-      } else {
-        Write-Host "[ASD] Pushed commits."
-      }
-
+      if ($push.code -ne 0) { Write-Warning "git push failed:`n$($push.out)" } else { Write-Host "[ASD] Pushed commits." }
       if (Ask-YesNo "Push tags too?") {
         $pt = Git-Run -GitArgs @('push','--tags') -Capture
         if ($pt.code -ne 0) { Write-Warning "git push --tags failed:`n$($pt.out)" } else { Write-Host "[ASD] Pushed tags." }
       }
     }
-  } finally {
-    Pop-Location
-  }
+  } finally { Pop-Location }
 }
 
+# -------- Main loop --------
 while ($true) {
   Show-Menu
   $choice = Read-Host "Enter choice"
