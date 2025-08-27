@@ -10,6 +10,7 @@
    - Generates sitemap.xml, robots.txt (single Sitemap line)
    - Generates RSS (feed.xml) and Atom (atom.xml)
    - Builds assets/search-index.json for search.html
+   - Injects Prev/Next post links into blog posts if missing
    - Preserves file timestamps so baking doesn't change dates
    - PowerShell 5.1-safe
    ============================================ #>
@@ -17,6 +18,7 @@
 #requires -Version 5.1
 . "$PSScriptRoot\_lib.ps1"
 
+# ---------- Helpers (PS 5.1-safe) ----------
 function TryParse-Date([string]$v){ if([string]::IsNullOrWhiteSpace($v)){return $null}
   [datetime]$out=[datetime]::MinValue
   $ok=[datetime]::TryParse($v,[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::AssumeLocal,[ref]$out)
@@ -165,16 +167,24 @@ function Fix-404Links([string]$html,[string]$base){
   return $html
 }
 
-# ------ Per-page Description helper ------
-function Get-ASDDescription([string]$raw,[string]$content){
-  # 1) Try explicit ASD description comment inside content
-  $m = [regex]::Match($content,'(?is)<!--\s*ASD:DESCRIPTION:\s*(.*?)\s*-->')
+# ------ Description helpers ------
+function Get-FirstParagraphDesc([string]$content){
+  if([string]::IsNullOrWhiteSpace($content)){ return $null }
+  # Prefer first paragraph after H1; else first paragraph anywhere
+  $m=[regex]::Match($content,'(?is)<h1[^>]*>.*?</h1>\s*<p[^>]*>(.*?)</p>')
+  if(-not $m.Success){ $m=[regex]::Match($content,'(?is)<p[^>]*>(.*?)</p>') }
   if($m.Success){
-    $d = $m.Groups[1].Value
-  } else {
-    # 2) Try a meta description found in raw file
-    $d = Get-MetaDescriptionFromHtml $raw
+    $txt = HtmlStrip $m.Groups[1].Value
+    $txt = [regex]::Replace($txt,'\s+',' ').Trim()
+    if($txt.Length -gt 160){ $txt = $txt.Substring(0,160) }
+    return $txt
   }
+  return $null
+}
+function Get-ASDDescription([string]$raw,[string]$content){
+  # 1) Explicit comment in content
+  $m = [regex]::Match($content,'(?is)<!--\s*ASD:DESCRIPTION:\s*(.*?)\s*-->')
+  if($m.Success){ $d = $m.Groups[1].Value } else { $d = Get-MetaDescriptionFromHtml $raw }
   if([string]::IsNullOrWhiteSpace($d)){ return $null }
   $d = [regex]::Replace($d,'\s+',' ').Trim()
   if($d.Length -gt 160){ $d = $d.Substring(0,160) }
@@ -292,22 +302,60 @@ function Build-SearchIndex($BlogDir,$RootDir){
   Write-Host "[ASD] search-index.json built ($($rows.Count) items)"
 }
 
+# ------ Prev/Next helpers ------
+function Build-PrevNextMap($posts){
+  $map = @{}
+  $count = $posts.Count
+  for($i=0; $i -lt $count; $i++){
+    $prev = $null; $next = $null
+    if($i -lt ($count-1)){ $prev = $posts[$i+1] }  # older
+    if($i -gt 0){ $next = $posts[$i-1] }          # newer
+    $map[$posts[$i].Name] = @{ Prev = $prev; Next = $next }
+  }
+  return $map
+}
+function Inject-PostNav([string]$content, $prev, $next){
+  if([string]::IsNullOrWhiteSpace($content)){ return $content }
+  if([regex]::IsMatch($content,'(?is)<div\s+class\s*=\s*["'']post-nav["'']')){ return $content }
+  $prevHtml = '<span></span>'
+  $nextHtml = '<span></span>'
+  if($prev -ne $null){
+    $prevHtml = '<a class="prev" href="/blog/' + $prev.Name + '"><span>← ' + (HtmlEscape $prev.Title) + '</span></a>'
+  }
+  if($next -ne $null){
+    $nextHtml = '<a class="next" href="/blog/' + $next.Name + '"><span>' + (HtmlEscape $next.Title) + ' →</span></a>'
+  }
+  $nav = '<div class="post-nav">' + $prevHtml + '<span></span>' + $nextHtml + '</div>'
+  $m=[regex]::Match($content,'(?is)</article>')
+  if($m.Success){
+    $idx=$m.Index
+    return $content.Substring(0,$idx) + $nav + $content.Substring($idx)
+  } else {
+    return $content + $nav
+  }
+}
+
 # ---------------- start ----------------
 $paths=Get-ASDPaths; $cfg=Get-ASDConfig
 $RootDir=$paths.Root; $LayoutPath=$paths.Layout; $BlogDir=$paths.Blog
-$Brand=$cfg.SiteName; $Money=$cfg.StoreUrl; $Desc=$cfg.Description
+$Brand=$cfg.SiteName; $Money=$cfg.StoreUrl; $SiteDesc=$cfg.Description
 $Base=Normalize-BaseUrlLocal ([string]$cfg.BaseUrl)
 $Year=(Get-Date).Year
 
 Write-Host "[ASD] Baking... brand='$Brand' store='$Money' base='$Base'"
 
+# Redirect stubs
 $made=Generate-RedirectStubs -redirectsJson $paths.Redirects -root $RootDir -base $Base
 if($made -gt 0){Write-Host "[ASD] Redirect stubs generated: $made"}
 
 if(-not (Test-Path $LayoutPath)){Write-Error "[ASD] layout.html not found at $LayoutPath"; exit 1}
 $Layout=Get-Content $LayoutPath -Raw
 
-# Blog index (no accumulating blank lines)
+# Build a sorted post list once (for index, feeds, Prev/Next)
+$postsForFeed = Build-PostList -BlogDir $BlogDir -Base $Base
+$prevNextMap  = Build-PrevNextMap -posts $postsForFeed
+
+# ---- Build /blog/ index (stable dates) ----
 $BlogIndex=Join-Path $BlogDir "index.html"
 if(Test-Path $BlogIndex){
   $entries=New-Object System.Collections.ArrayList
@@ -337,10 +385,11 @@ if(Test-Path $BlogIndex){
   Write-Host "[ASD] Blog index updated"
 }
 
-# Wrap every HTML (except layout)
+# ---- Wrap every HTML (except layout.html) ----
 Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".html" -and $_.FullName -ne $LayoutPath } | ForEach-Object {
-  $it=Get-Item $_.FullName; $c=$it.CreationTimeUtc; $w=$it.LastWriteTimeUtc
+  $it=Get-Item $_.FullName; $origC=$it.CreationTimeUtc; $origW=$it.LastWriteTimeUtc
   $raw=Get-Content $_.FullName -Raw
+
   if($raw -match '(?is)<!--\s*ASD:REDIRECT\b'){ Write-Host ("[ASD] Skipped redirect stub: {0}" -f $_.FullName.Substring($RootDir.Length+1)); return }
 
   $content=Extract-Content $raw
@@ -348,37 +397,52 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   $content=$content.Trim()
   $content=[regex]::Replace($content,'(\r?\n){3,}',([Environment]::NewLine + [Environment]::NewLine))
 
+  # If this is a blog post, inject .post-nav if missing
+  $rel = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'
+  $isBlogPost = ($rel -match '^blog/') -and ($_.Name -ne 'index.html') -and ($_.Name -notmatch '^page-\d+\.html$')
+  if($isBlogPost){
+    if($prevNextMap.ContainsKey($_.Name)){
+      $pn = $prevNextMap[$_.Name]
+      $content = Inject-PostNav -content $content -prev $pn.Prev -next $pn.Next
+    }
+  }
+
+  # Title for layout
   $tm=[regex]::Match($content,'(?is)<h1[^>]*>(.*?)</h1>'); $pageTitle=$null
   if($tm.Success){$pageTitle=$tm.Groups[1].Value}else{$pageTitle=$_.BaseName}
 
+  # Description for layout (prefer ASD comment/meta; for posts fallback to first paragraph)
+  $pageDesc = Get-ASDDescription -raw $raw -content $content
+  if([string]::IsNullOrWhiteSpace($pageDesc) -and $isBlogPost){
+    $pageDesc = Get-FirstParagraphDesc -content $content
+  }
+  if([string]::IsNullOrWhiteSpace($pageDesc)){
+    $pageDesc = $SiteDesc
+  }
+
   $prefix=Get-RelPrefix -RootDir $RootDir -FilePath $_.FullName
 
-  # --- NEW: choose per-page description (ASD comment > source meta > site default)
-  $pageDesc = Get-ASDDescription -raw $raw -content $content
-  if([string]::IsNullOrWhiteSpace($pageDesc)){ $pageDesc = $Desc }
-
   $final=$Layout.Replace('{{CONTENT}}',$content).Replace('{{TITLE}}',$pageTitle).Replace('{{BRAND}}',$Brand).Replace('{{DESCRIPTION}}',$pageDesc).Replace('{{MONEY}}',$Money).Replace('{{YEAR}}',"$Year").Replace('{{PREFIX}}',$prefix)
+
+  # Robots
   $final=AddOrReplaceMetaRobots $final (DetermineRobotsForFile $_.FullName $raw)
-
-  # Feeds in head
+  # Feed links
   $final=Ensure-HeadFeeds $final $prefix $Brand
-
-  # 404 special: keep assets/canonical rooted and convert relative hrefs to root-absolute; skip prefix rewrite
+  # 404 special vs global rewrite
   $name=[IO.Path]::GetFileName($_.FullName)
   if($name -ieq '404.html'){
     $final = Fix-404Links $final $Base
   } else {
     $final = Rewrite-RootLinks $final $prefix
   }
-
   $final=Normalize-DashesToPipe $final
 
   Set-Content -Encoding UTF8 $_.FullName $final
-  Preserve-FileTimes $_.FullName $c $w
+  Preserve-FileTimes $_.FullName $origC $origW
   Write-Host ("[ASD] Wrapped {0} (prefix='{1}')" -f $_.FullName.Substring($RootDir.Length+1), $prefix)
 }
 
-# sitemap & robots
+# ---- sitemap & robots ----
 Write-Host "[ASD] Using base URL for sitemap: $Base"
 $urls=New-Object System.Collections.Generic.List[object]
 Get-ChildItem -Path $RootDir -Recurse -File -Include *.html |
@@ -462,14 +526,13 @@ $robots += "Sitemap: $absMap" + [Environment]::NewLine
 Set-Content -Encoding UTF8 $robotsPath $robots
 Write-Host "[ASD] robots.txt: Sitemap -> $absMap"
 
-# Feeds
+# ---- Feeds ----
 $rssPath=Join-Path $RootDir 'feed.xml'
 $atomPath=Join-Path $RootDir 'atom.xml'
-$postsForFeed=Build-PostList -BlogDir $BlogDir -Base $Base
-Generate-RssFeed  -posts $postsForFeed -base $Base -title $Brand -desc $Desc -outPath $rssPath  -maxItems 20
-Generate-AtomFeed -posts $postsForFeed -base $Base -title $Brand -desc $Desc -outPath $atomPath -maxItems 20
+Generate-RssFeed  -posts $postsForFeed -base $Base -title $Brand -desc $SiteDesc -outPath $rssPath  -maxItems 20
+Generate-AtomFeed -posts $postsForFeed -base $Base -title $Brand -desc $SiteDesc -outPath $atomPath -maxItems 20
 
-# Search index
+# ---- Search index ----
 Build-SearchIndex -BlogDir $BlogDir -RootDir $RootDir
 
 Write-Host "[ASD] Done."
