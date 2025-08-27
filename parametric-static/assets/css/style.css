@@ -232,7 +232,8 @@ figcaption { color: var(--muted); font-size: .9rem; }
 .table-wrap { width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: .6rem .75rem; border: 1px solid var(--border); text-align: left; }
-thead th { background: #f4f4f4; }
+/* adaptive header bg + readable text in both themes */
+thead th { background: var(--chip); color: var(--text); }
 
 /* Forms & buttons */
 input, select, textarea, button { font: inherit; }
@@ -286,7 +287,7 @@ kbd { background: var(--kbd-bg); border: 1px solid var(--border); border-bottom-
 .hero .inner { max-width: 1200px; margin: 0 auto; padding-left: .25rem; padding-right: .25rem; }
 
 /* Post extras */
-.breadcrumbs { margin: .25rem 0 1rem; font-size: .95rem; color: var(--muted); }
+breadcrumbs { margin: .25rem 0 1rem; font-size: .95rem; color: var(--muted); }
 .breadcrumbs a { text-decoration: none; }
 .byline { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .75rem; color: var(--muted); }
 .byline-dot { margin: 0 .25rem; opacity: .6; }
