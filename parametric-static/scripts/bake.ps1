@@ -218,6 +218,26 @@ function Ensure-CanonicalTag([string]$html,[string]$href){
   if($rx.IsMatch($html)){ return $rx.Replace($html,$tag,1) } else { return Insert-AfterHeadOpen $html @($tag) }
 }
 
+# ------ OG image (absolute) helper ------
+function Ensure-OgImageAbsolute([string]$html,[string]$base,[string]$root){
+  if([string]::IsNullOrWhiteSpace($html)){ return $html }
+  $candidates = @('assets/img/og.jpg','assets/img/og.jpeg','assets/img/og.png','assets/img/og.webp')
+  $found = $null
+  foreach($c in $candidates){
+    if (Test-Path (Join-Path $root $c)) { $found = $c; break }
+  }
+  if ($null -eq $found) { return $html }
+  if ($base -match '^[a-z]+://') {
+    $ogAbs = (New-Object Uri((New-Object Uri($base)), $found)).AbsoluteUri
+  } else {
+    $ogAbs = Collapse-DoubleSlashesPreserveSchemeLocal($base.TrimEnd('/') + '/' + $found)
+  }
+  $tag = '<meta property="og:image" content="' + (HtmlEscape $ogAbs) + '">'
+  $rx  = [regex]'(?is)<meta\s+property\s*=\s*["'']og:image["''][^>]*>'
+  if ($rx.IsMatch($html)) { $html = $rx.Replace($html,$tag,1) } else { $html = Insert-AfterHeadOpen $html @($tag) }
+  return $html
+}
+
 # ------ Feed builders (RSS + Atom) ------
 function Build-PostList($BlogDir,$Base){
   $list=New-Object System.Collections.ArrayList
@@ -531,16 +551,19 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   # Feed links
   $final=Ensure-HeadFeeds $final $prefix $Brand
 
-  # Canonical per page (skip 404; handled in Fix-404Links)
+  # Canonical & rewrites
   $name=[IO.Path]::GetFileName($_.FullName)
   if($name -ieq '404.html'){
     $final = Fix-404Links $final $Base
   } else {
-    $canonical = Build-Canonical -base $Base -rel $rel
+    $canonical = Build-Canonical -base $Base -relPath $rel
     $final = Ensure-CanonicalTag -html $final -href $canonical
     # Rewrite root-absolute links to prefix-relative
     $final = Rewrite-RootLinks $final $prefix
   }
+
+  # OG image (absolute); runs after rewrites/canonical
+  $final = Ensure-OgImageAbsolute -html $final -base $Base -root $RootDir
 
   $final=Normalize-DashesToPipe $final
 
