@@ -6,11 +6,12 @@
 
   <title>{{TITLE}} | {{BRAND}}</title>
   <meta name="description" content="{{DESCRIPTION}}">
+  <link rel="canonical" href="{{PREFIX}}index.html"><!-- bake.ps1 replaces with absolute per-page canonical -->
 
   <!-- Open Graph -->
   <meta property="og:title" content="{{TITLE}} | {{BRAND}}">
   <meta property="og:description" content="{{DESCRIPTION}}">
-  <meta property="og:image" content="{{PREFIX}}assets/img/og.jpeg">
+  <meta property="og:image" content="{{PREFIX}}assets/img/og.jpeg"><!-- bake.ps1 makes this absolute if the file exists -->
   <meta property="og:type" content="website">
 
   <!-- Twitter -->
@@ -33,7 +34,8 @@
   </script>
 
   <link rel="stylesheet" href="{{PREFIX}}assets/css/style.css">
-  <link rel="alternate" type="application/rss+xml" title="{{BRAND}} Blog" href="{{PREFIX}}feed.xml">
+  <link rel="alternate" type="application/rss+xml"  title="{{BRAND}} Blog" href="{{PREFIX}}feed.xml">
+  <link rel="alternate" type="application/atom+xml" title="{{BRAND}} Atom" href="{{PREFIX}}atom.xml">
 </head>
 <body>
   <header>
