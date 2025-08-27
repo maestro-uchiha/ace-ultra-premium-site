@@ -1,3 +1,6 @@
-﻿[
-
-]
+﻿{
+    "from":  "/blog/how-to-use-ace-ultra-premium-for-everyday-taks.html",
+    "to":  "/blog/how-to-use-ace-ultra-premium-for-everyday-tasks.html",
+    "code":  301,
+    "enabled":  true
+}
