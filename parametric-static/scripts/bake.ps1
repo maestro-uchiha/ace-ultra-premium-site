@@ -159,13 +159,26 @@ function Get-RootPrefixFromBase([string]$base){
 }
 function Fix-404Links([string]$html,[string]$base){
   $root = Get-RootPrefixFromBase $base
-  # assets to root
   $html = [regex]::Replace($html,'(?i)\b(href|src|content)\s*=\s*"((\{\{PREFIX\}\})?assets/)', '$1="' + $root + 'assets/')
-  # canonical to root index
   $html = [regex]::Replace($html,'(?i)<link\s+rel\s*=\s*"canonical"\s+href\s*=\s*"[^"]*"\s*>','<link rel="canonical" href="' + $root + 'index.html">')
-  # ANY relative href (not http(s), mailto, tel, #, or starting with /) → root-absolute
   $html = [regex]::Replace($html,'(?i)href\s*=\s*"(?!https?://|mailto:|tel:|#|/)([^"]+)"','href="' + $root + '$1"')
   return $html
+}
+
+# ------ Per-page Description helper ------
+function Get-ASDDescription([string]$raw,[string]$content){
+  # 1) Try explicit ASD description comment inside content
+  $m = [regex]::Match($content,'(?is)<!--\s*ASD:DESCRIPTION:\s*(.*?)\s*-->')
+  if($m.Success){
+    $d = $m.Groups[1].Value
+  } else {
+    # 2) Try a meta description found in raw file
+    $d = Get-MetaDescriptionFromHtml $raw
+  }
+  if([string]::IsNullOrWhiteSpace($d)){ return $null }
+  $d = [regex]::Replace($d,'\s+',' ').Trim()
+  if($d.Length -gt 160){ $d = $d.Substring(0,160) }
+  return $d
 }
 
 # ------ Feed builders (RSS + Atom) ------
@@ -251,16 +264,21 @@ function Build-SearchIndex($BlogDir,$RootDir){
     $date = Get-MetaDateFromHtml $html
     if(-not $date){ $date = $f.CreationTime.ToString('yyyy-MM-dd') }
 
-    $desc = Get-MetaDescriptionFromHtml $html
-    if(-not $desc){
+    # Prefer ASD:DESCRIPTION; else meta; else first <p>
+    $desc = $null
+    $mDesc = [regex]::Match($html,'(?is)<!--\s*ASD:DESCRIPTION:\s*(.*?)\s*-->')
+    if($mDesc.Success){ $desc = $mDesc.Groups[1].Value.Trim() }
+    if([string]::IsNullOrWhiteSpace($desc)){ $desc = Get-MetaDescriptionFromHtml $html }
+    if([string]::IsNullOrWhiteSpace($desc)){
       $mP=[regex]::Match($html,'(?is)<p[^>]*>(.*?)</p>')
       if($mP.Success){ $desc = HtmlStrip $mP.Groups[1].Value } else { $desc = "" }
-      if($desc.Length -gt 240){ $desc = $desc.Substring(0,240) + '…' }
     }
+    $desc = [regex]::Replace($desc,'\s+',' ').Trim()
+    if($desc.Length -gt 240){ $desc = $desc.Substring(0,240) + '…' }
 
     $rows += [pscustomobject]@{
       title = $title
-      url   = ('blog/' + $f.Name)   # prefix added on the client
+      url   = ('blog/' + $f.Name)
       date  = $date
       desc  = $desc
     }
@@ -328,7 +346,6 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   $content=Extract-Content $raw
   if($null -eq $content){ $content='' }
   $content=$content.Trim()
-  # also collapse 3+ blank lines inside content to prevent growth
   $content=[regex]::Replace($content,'(\r?\n){3,}',([Environment]::NewLine + [Environment]::NewLine))
 
   $tm=[regex]::Match($content,'(?is)<h1[^>]*>(.*?)</h1>'); $pageTitle=$null
@@ -336,10 +353,14 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
 
   $prefix=Get-RelPrefix -RootDir $RootDir -FilePath $_.FullName
 
-  $final=$Layout.Replace('{{CONTENT}}',$content).Replace('{{TITLE}}',$pageTitle).Replace('{{BRAND}}',$Brand).Replace('{{DESCRIPTION}}',$Desc).Replace('{{MONEY}}',$Money).Replace('{{YEAR}}',"$Year").Replace('{{PREFIX}}',$prefix)
+  # --- NEW: choose per-page description (ASD comment > source meta > site default)
+  $pageDesc = Get-ASDDescription -raw $raw -content $content
+  if([string]::IsNullOrWhiteSpace($pageDesc)){ $pageDesc = $Desc }
+
+  $final=$Layout.Replace('{{CONTENT}}',$content).Replace('{{TITLE}}',$pageTitle).Replace('{{BRAND}}',$Brand).Replace('{{DESCRIPTION}}',$pageDesc).Replace('{{MONEY}}',$Money).Replace('{{YEAR}}',"$Year").Replace('{{PREFIX}}',$prefix)
   $final=AddOrReplaceMetaRobots $final (DetermineRobotsForFile $_.FullName $raw)
 
-  # Feeds
+  # Feeds in head
   $final=Ensure-HeadFeeds $final $prefix $Brand
 
   # 404 special: keep assets/canonical rooted and convert relative hrefs to root-absolute; skip prefix rewrite
@@ -350,7 +371,6 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
     $final = Rewrite-RootLinks $final $prefix
   }
 
-  # Normalize dashes
   $final=Normalize-DashesToPipe $final
 
   Set-Content -Encoding UTF8 $_.FullName $final
