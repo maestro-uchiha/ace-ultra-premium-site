@@ -141,7 +141,7 @@ function Ensure-HeadFeeds([string]$html,[string]$prefix,[string]$brand){
   $html
 }
 
-# --- 404 helpers: make all relative links root-absolute so CSS + nav work anywhere ---
+# --- 404 helpers ---
 function Get-RootPrefixFromBase([string]$base){
   if([string]::IsNullOrWhiteSpace($base)){ return "/" }
   if($base -match '^[a-z]+://'){
@@ -170,7 +170,6 @@ function Fix-404Links([string]$html,[string]$base){
 # ------ Description helpers ------
 function Get-FirstParagraphDesc([string]$content){
   if([string]::IsNullOrWhiteSpace($content)){ return $null }
-  # Prefer first paragraph after H1; else first paragraph anywhere
   $m=[regex]::Match($content,'(?is)<h1[^>]*>.*?</h1>\s*<p[^>]*>(.*?)</p>')
   if(-not $m.Success){ $m=[regex]::Match($content,'(?is)<p[^>]*>(.*?)</p>') }
   if($m.Success){
@@ -182,13 +181,40 @@ function Get-FirstParagraphDesc([string]$content){
   return $null
 }
 function Get-ASDDescription([string]$raw,[string]$content){
-  # 1) Explicit comment in content
   $m = [regex]::Match($content,'(?is)<!--\s*ASD:DESCRIPTION:\s*(.*?)\s*-->')
   if($m.Success){ $d = $m.Groups[1].Value } else { $d = Get-MetaDescriptionFromHtml $raw }
   if([string]::IsNullOrWhiteSpace($d)){ return $null }
   $d = [regex]::Replace($d,'\s+',' ').Trim()
   if($d.Length -gt 160){ $d = $d.Substring(0,160) }
   return $d
+}
+
+# ------ Canonical helpers (NEW) ------
+function Build-Canonical([string]$base,[string]$relPath){
+  if([string]::IsNullOrWhiteSpace($relPath)){ return $base }
+  $rel = $relPath.Replace('\','/')
+  if($rel -ieq 'index.html'){
+    return Collapse-DoubleSlashesPreserveSchemeLocal($base)
+  }
+  $m = [regex]::Match($rel,'^(.+)/index\.html$')
+  if($m.Success){
+    if($base -match '^[a-z]+://'){
+      return (New-Object Uri((New-Object Uri($base)), ($m.Groups[1].Value.Trim('/') + '/'))).AbsoluteUri
+    } else {
+      return Collapse-DoubleSlashesPreserveSchemeLocal($base.TrimEnd('/') + '/' + $m.Groups[1].Value.Trim('/') + '/')
+    }
+  } else {
+    if($base -match '^[a-z]+://'){
+      return (New-Object Uri((New-Object Uri($base)), $rel)).AbsoluteUri
+    } else {
+      return Collapse-DoubleSlashesPreserveSchemeLocal($base.TrimEnd('/') + '/' + $rel)
+    }
+  }
+}
+function Ensure-CanonicalTag([string]$html,[string]$href){
+  $tag = '<link rel="canonical" href="' + (HtmlEscape $href) + '">'
+  $rx  = [regex]'(?is)<link\s+rel\s*=\s*["'']canonical["''][^>]*>'
+  if($rx.IsMatch($html)){ return $rx.Replace($html,$tag,1) } else { return Insert-AfterHeadOpen $html @($tag) }
 }
 
 # ------ Feed builders (RSS + Atom) ------
@@ -411,7 +437,7 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   $tm=[regex]::Match($content,'(?is)<h1[^>]*>(.*?)</h1>'); $pageTitle=$null
   if($tm.Success){$pageTitle=$tm.Groups[1].Value}else{$pageTitle=$_.BaseName}
 
-  # Description for layout (prefer ASD comment/meta; for posts fallback to first paragraph)
+  # Description for layout
   $pageDesc = Get-ASDDescription -raw $raw -content $content
   if([string]::IsNullOrWhiteSpace($pageDesc) -and $isBlogPost){
     $pageDesc = Get-FirstParagraphDesc -content $content
@@ -428,13 +454,18 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   $final=AddOrReplaceMetaRobots $final (DetermineRobotsForFile $_.FullName $raw)
   # Feed links
   $final=Ensure-HeadFeeds $final $prefix $Brand
-  # 404 special vs global rewrite
+
+  # Canonical per page (skip 404; handled in Fix-404Links)
   $name=[IO.Path]::GetFileName($_.FullName)
   if($name -ieq '404.html'){
     $final = Fix-404Links $final $Base
   } else {
+    $canonical = Build-Canonical -base $Base -rel $rel
+    $final = Ensure-CanonicalTag -html $final -href $canonical
+    # Rewrite root-absolute links to prefix-relative
     $final = Rewrite-RootLinks $final $prefix
   }
+
   $final=Normalize-DashesToPipe $final
 
   Set-Content -Encoding UTF8 $_.FullName $final
