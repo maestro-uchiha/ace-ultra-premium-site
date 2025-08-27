@@ -11,6 +11,7 @@
    - Generates RSS (feed.xml) and Atom (atom.xml)
    - Builds assets/search-index.json for search.html
    - Injects Prev/Next post links into blog posts if missing
+   - Injects Suggested posts (related) into blog posts if missing
    - Preserves file timestamps so baking doesn't change dates
    - PowerShell 5.1-safe
    ============================================ #>
@@ -189,7 +190,7 @@ function Get-ASDDescription([string]$raw,[string]$content){
   return $d
 }
 
-# ------ Canonical helpers (NEW) ------
+# ------ Canonical helpers ------
 function Build-Canonical([string]$base,[string]$relPath){
   if([string]::IsNullOrWhiteSpace($relPath)){ return $base }
   $rel = $relPath.Replace('\','/')
@@ -361,6 +362,76 @@ function Inject-PostNav([string]$content, $prev, $next){
   }
 }
 
+# ------ Suggested posts (NEW) ------
+# Stopwords (also strip brand/common words so everything isn't "related")
+$script:ASD_Stop = @{}
+foreach($w in @('the','a','an','and','or','for','with','from','to','of','in','on','how','what','is','are','vs','using','use','your','you','this','that','guide','worth','price','ace','ultra','premium')){
+  $script:ASD_Stop[$w] = $true
+}
+function Get-TitleTokens([string]$t){
+  if([string]::IsNullOrWhiteSpace($t)){ return @() }
+  $s = $t.ToLowerInvariant()
+  $s = [regex]::Replace($s,'[^a-z0-9\s]',' ')
+  $parts = @()
+  foreach($p in ($s -split '\s+')){
+    if([string]::IsNullOrWhiteSpace($p)){ continue }
+    if($p.Length -lt 3){ continue }
+    if($script:ASD_Stop.ContainsKey($p)){ continue }
+    if($parts -notcontains $p){ $parts += $p }
+  }
+  return $parts
+}
+function Build-RelatedList($posts,[string]$currentName,[int]$max=3){
+  $current = $null
+  foreach($p in $posts){ if($p.Name -eq $currentName){ $current=$p; break } }
+  if($null -eq $current){ return @() }
+  $curTok = Get-TitleTokens $current.Title
+
+  $scored = @()
+  foreach($p in $posts){
+    if($p.Name -eq $currentName){ continue }
+    $tok = Get-TitleTokens $p.Title
+    $score = 0
+    foreach($t in $tok){ if($curTok -contains $t){ $score++ } }
+    $scored += [pscustomobject]@{ Name=$p.Name; Title=$p.Title; Date=$p.Date; DateText=$p.DateText; Score=$score }
+  }
+
+  $top = $scored | Sort-Object @{Expression='Score';Descending=$true}, @{Expression='Date';Descending=$true}
+  $pick = @()
+  foreach($x in $top){
+    if($x.Score -gt 0){ $pick += $x }
+    if($pick.Count -ge $max){ break }
+  }
+  if($pick.Count -lt $max){
+    foreach($x in $top){
+      if($pick.Count -ge $max){ break }
+      $already = $false
+      foreach($y in $pick){ if($y.Name -eq $x.Name){ $already=$true; break } }
+      if(-not $already){ $pick += $x }
+    }
+  }
+  return $pick[0..([Math]::Max(0,$pick.Count-1))]
+}
+function Inject-RelatedSection([string]$content, $items){
+  if([string]::IsNullOrWhiteSpace($content)){ return $content }
+  if([regex]::IsMatch($content,'(?is)<div\s+class\s*=\s*["'']related["'']')){ return $content }
+  if($null -eq $items -or $items.Count -lt 1){ return $content }
+
+  $lis = New-Object System.Collections.Generic.List[string]
+  foreach($it in $items){
+    $lis.Add('<li><a href="/blog/' + $it.Name + '">' + (HtmlEscape $it.Title) + '</a><small> | ' + $it.DateText + '</small></li>') | Out-Null
+  }
+  $html = '<div class="related"><h2>Suggested posts</h2><ul class="posts">' + ([string]::Join('', $lis)) + '</ul></div>'
+
+  $m=[regex]::Match($content,'(?is)</article>')
+  if($m.Success){
+    $idx=$m.Index
+    return $content.Substring(0,$idx) + $html + $content.Substring($idx)
+  } else {
+    return $content + $html
+  }
+}
+
 # ---------------- start ----------------
 $paths=Get-ASDPaths; $cfg=Get-ASDConfig
 $RootDir=$paths.Root; $LayoutPath=$paths.Layout; $BlogDir=$paths.Blog
@@ -377,7 +448,7 @@ if($made -gt 0){Write-Host "[ASD] Redirect stubs generated: $made"}
 if(-not (Test-Path $LayoutPath)){Write-Error "[ASD] layout.html not found at $LayoutPath"; exit 1}
 $Layout=Get-Content $LayoutPath -Raw
 
-# Build a sorted post list once (for index, feeds, Prev/Next)
+# Build a sorted post list once (for index, feeds, Prev/Next, Related)
 $postsForFeed = Build-PostList -BlogDir $BlogDir -Base $Base
 $prevNextMap  = Build-PrevNextMap -posts $postsForFeed
 
@@ -423,13 +494,18 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   $content=$content.Trim()
   $content=[regex]::Replace($content,'(\r?\n){3,}',([Environment]::NewLine + [Environment]::NewLine))
 
-  # If this is a blog post, inject .post-nav if missing
+  # If this is a blog post, inject .post-nav and .related if missing
   $rel = $_.FullName.Substring($RootDir.Length + 1) -replace '\\','/'
   $isBlogPost = ($rel -match '^blog/') -and ($_.Name -ne 'index.html') -and ($_.Name -notmatch '^page-\d+\.html$')
   if($isBlogPost){
     if($prevNextMap.ContainsKey($_.Name)){
       $pn = $prevNextMap[$_.Name]
       $content = Inject-PostNav -content $content -prev $pn.Prev -next $pn.Next
+    }
+    # Suggested posts (related)
+    $related = Build-RelatedList -posts $postsForFeed -currentName $_.Name -max 3
+    if($related -and $related.Count -gt 0){
+      $content = Inject-RelatedSection -content $content -items $related
     }
   }
 
