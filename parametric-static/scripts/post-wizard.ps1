@@ -19,13 +19,20 @@ Set-StrictMode -Version 2.0
 $S   = Get-ASDPaths
 $cfg = Get-ASDConfig -Root $S.Root
 
-function Ask { param([string]$Prompt, [string]$Default = "")
-  if ([string]::IsNullOrWhiteSpace($Default)) { return (Read-Host $Prompt) }
-  $v = Read-Host ("{0} [{1}]" -f $Prompt, $Default)
-  if ([string]::IsNullOrWhiteSpace($v)) { return $Default } else { return $v }
+function Ask {
+  param([string]$Prompt, [string]$Default = "")
+  if ([string]::IsNullOrWhiteSpace($Default)) {
+    return (Read-Host $Prompt)
+  } else {
+    $v = Read-Host ("{0} [{1}]" -f $Prompt, $Default)
+    if ([string]::IsNullOrWhiteSpace($v)) { return $Default } else { return $v }
+  }
 }
-function Ask-YesNo { param([string]$Prompt, [bool]$DefaultNo = $true)
-  $suffix = if ($DefaultNo) { "(y/N)" } else { "(Y/n)" }
+
+function Ask-YesNo {
+  param([string]$Prompt, [bool]$DefaultNo = $true)
+  $suffix = ""
+  if ($DefaultNo) { $suffix = "(y/N)" } else { $suffix = "(Y/n)" }
   $ans = Read-Host ("{0} {1}" -f $Prompt, $suffix)
   if ([string]::IsNullOrWhiteSpace($ans)) { return (-not $DefaultNo) }
   return ($ans -match '^[Yy]')
@@ -42,12 +49,11 @@ function Show-Menu {
   Write-Host " -- Pages ------------------------------------------------------------"
   Write-Host " 16) New page          17) Edit page            18) Rename page"
   Write-Host " 19) Delete page       20) List pages"
-  Write-Host " -- Project ----------------------------------------------------------"
-  Write-Host " 21) Mark milestone (tag + changelog)"
   Write-Host "  q) Quit"
 }
 
 # ---------------- Posts ----------------
+
 function Do-NewPost {
   $title = Ask "Title"
   $slug  = Ask "Slug (kebab-case)"
@@ -63,17 +69,21 @@ function Do-NewPost {
     & $newPostPath -Title $title -Slug $slug -Description $desc
   }
 }
+
 function Do-EditPost {
   $slug = Ask "Slug to edit"
   $t = Ask "New Title (leave blank to keep)" ""
   $d = Ask "New Description (leave blank to keep)" ""
   $b = Ask "New BodyHtml (leave blank to keep)" ""
+
   $callArgs = @('-Slug', $slug)
   if (-not [string]::IsNullOrWhiteSpace($t)) { $callArgs += @('-Title', $t) }
   if (-not [string]::IsNullOrWhiteSpace($d)) { $callArgs += @('-Description', $d) }
   if (-not [string]::IsNullOrWhiteSpace($b)) { $callArgs += @('-BodyHtml', $b) }
+
   & (Join-Path $ScriptsDir "update-post.ps1") @callArgs
 }
+
 function Do-RenamePost {
   $old = Ask "Old slug"
   $new = Ask "New slug"
@@ -82,12 +92,21 @@ function Do-RenamePost {
   if ($keep) { & $script -OldSlug $old -NewSlug $new -LeaveRedirect }
   else       { & $script -OldSlug $old -NewSlug $new }
 }
+
 function Do-DeletePost {
   $slug = Ask "Slug to delete"
   & (Join-Path $ScriptsDir "delete-post.ps1") -Slug $slug
 }
-function Do-Extract { $slug = Ask "Slug to extract to drafts"; & (Join-Path $ScriptsDir "extract-post.ps1") -Slug $slug }
-function Do-ApplyDraft { $slug = Ask "Slug to apply draft to"; & (Join-Path $ScriptsDir "apply-draft.ps1") -Slug $slug }
+
+function Do-Extract {
+  $slug = Ask "Slug to extract to drafts"
+  & (Join-Path $ScriptsDir "extract-post.ps1") -Slug $slug
+}
+
+function Do-ApplyDraft {
+  $slug = Ask "Slug to apply draft to"
+  & (Join-Path $ScriptsDir "apply-draft.ps1") -Slug $slug
+}
 
 function Do-Redirects {
   Write-Host ""
@@ -113,15 +132,23 @@ function Do-Redirects {
     default { Write-Host "Invalid choice." }
   }
 }
-function Do-BuildPagination { $size = Ask "Page size" "10"; & (Join-Path $ScriptsDir "build-blog-index.ps1") -PageSize ([int]$size) }
+
+function Do-BuildPagination {
+  $size = Ask "Page size" "10"
+  & (Join-Path $ScriptsDir "build-blog-index.ps1") -PageSize ([int]$size)
+}
 
 # --- Run heavy scripts in a clean child PowerShell to isolate parsing/strict-mode ---
-function Invoke-Clean { param([string]$ScriptFullPath, [string[]]$Args = @())
+function Invoke-Clean {
+  param([string]$ScriptFullPath, [string[]]$Args = @())
   $psiArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File', $ScriptFullPath) + $Args
   & powershell.exe @psiArgs
   $code = $LASTEXITCODE
-  if ($code -ne 0) { Write-Error ("Child process exited with code {0} running {1}" -f $code, $ScriptFullPath) }
+  if ($code -ne 0) {
+    Write-Error ("Child process exited with code {0} running {1}" -f $code, $ScriptFullPath)
+  }
 }
+
 function Do-Bake       { Invoke-Clean (Join-Path $ScriptsDir "bake.ps1") }
 function Do-BuildBake  { Invoke-Clean (Join-Path $ScriptsDir "build-and-bake.ps1") }
 function Do-CheckLinks { Invoke-Clean (Join-Path $ScriptsDir "check-links.ps1") }
@@ -130,6 +157,7 @@ function Do-ListPosts {
   if (-not (Test-Path $S.Blog)) { Write-Host "(no blog/ folder yet)"; return }
   Get-ChildItem -Path $S.Blog -Filter *.html -File | ForEach-Object { Write-Host $_.Name }
 }
+
 function Do-OpenPost {
   $slug = Ask "Slug to open in VS Code"
   $p = Join-Path $S.Blog ($slug + ".html")
@@ -137,17 +165,21 @@ function Do-OpenPost {
     Write-Host "[ASD] Opening $p in VS Code..."
     try { Start-Process code -ArgumentList @("--reuse-window","`"$p`"") -ErrorAction Stop }
     catch { Write-Warning "VS Code not found on PATH. Opening in Notepad."; notepad.exe $p }
-  } else { Write-Warning "Post not found: $p" }
+  } else {
+    Write-Warning "Post not found: $p"
+  }
 }
+
 function Do-EditConfig {
   $cfgPath = Join-Path $S.Root "config.json"
-  if (-not (Test-Path $cfgPath)) { $null = Get-ASDConfig -Root $S.Root }
+  if (-not (Test-Path $cfgPath)) { $null = Get-ASDConfig -Root $S.Root } # ensure exists
   Write-Host "[ASD] Opening $cfgPath..."
   try { Start-Process code -ArgumentList @("--reuse-window","`"$cfgPath`"") -ErrorAction Stop }
   catch { notepad.exe $cfgPath }
 }
 
 # ---------------- Pages ----------------
+
 function Do-NewPage {
   $path = Ask "New page path (e.g. about or legal/policy)"
   $t = Ask "Title"
@@ -157,19 +189,26 @@ function Do-NewPage {
   $ps = @{ Path = $path; Title = $t }
   if (-not [string]::IsNullOrWhiteSpace($d)) { $ps.Description = $d }
   if (-not [string]::IsNullOrWhiteSpace($b)) { $ps.BodyHtml    = $b }
+
   & (Join-Path $ScriptsDir "new-page.ps1") @ps
 }
+
 function Do-EditPage {
   $path = Ask "Page path to edit (e.g. about or legal/privacy)"
   $t = Ask "New Title (blank=keep)" ""
   $d = Ask "New Description (blank=keep)" ""
   $b = Ask "New BodyHtml (blank=keep)" ""
-  $ps = @{ Path = $path }
+  $a = ""  # reserved if you later want to prompt for Author
+
+  $ps = @{ Path = $path }  # splatting avoids positional/space bugs
   if (-not [string]::IsNullOrWhiteSpace($t)) { $ps.Title       = $t }
   if (-not [string]::IsNullOrWhiteSpace($d)) { $ps.Description = $d }
   if (-not [string]::IsNullOrWhiteSpace($b)) { $ps.BodyHtml    = $b }
+  if (-not [string]::IsNullOrWhiteSpace($a)) { $ps.Author      = $a }
+
   & (Join-Path $ScriptsDir "update-page.ps1") @ps
 }
+
 function Do-RenamePage {
   $old = Ask "Old page path (e.g. about or legal/privacy)"
   $new = Ask "New page path (e.g. about-us or legal/policy)"
@@ -178,26 +217,27 @@ function Do-RenamePage {
   if ($keep) { & $script -OldPath $old -NewPath $new -LeaveRedirect }
   else       { & $script -OldPath $old -NewPath $new }
 }
+
 function Do-DeletePage {
   $path = Ask "Page path to delete (e.g. about or legal/privacy)"
   & (Join-Path $ScriptsDir "delete-page.ps1") -Path $path
 }
+
 function Do-ListPages {
+  # List non-blog HTML pages under root (exclude blog/, assets/, partials/, parametric-static/)
   $root = $S.Root
   if (-not (Test-Path $root)) { Write-Host "(root missing)"; return }
+
   $all = Get-ChildItem -Path $root -Filter *.html -File -Recurse
   if (-not $all) { Write-Host "(no pages found)"; return }
+
   foreach ($f in $all) {
-    $rel = ($f.FullName.Substring($root.Length)).TrimStart('\','/') -replace '\\','/'
+    $rel = ($f.FullName.Substring($root.Length)).TrimStart('\','/')
+    $rel = $rel -replace '\\','/'
     if ($rel -match '^(blog/|assets/|partials/|parametric-static/)') { continue }
     if ($rel -eq 'layout.html') { continue }
     Write-Host $rel
   }
-}
-
-# ---------------- Project ----------------
-function Do-Milestone {
-  Invoke-Clean (Join-Path $ScriptsDir "milestone.ps1")
 }
 
 # ------- Git helpers -------
@@ -282,7 +322,6 @@ while ($true) {
     '18' { Do-RenamePage }
     '19' { Do-DeletePage }
     '20' { Do-ListPages }
-    '21' { Do-Milestone }
     'q'  { break }
     'Q'  { break }
     default { Write-Host "Unknown choice." }
