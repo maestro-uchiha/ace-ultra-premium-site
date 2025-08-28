@@ -12,6 +12,8 @@
    - Builds assets/search-index.json for search.html
    - Injects Prev/Next post links into blog posts if missing
    - Injects Suggested posts (related) into blog posts if missing
+   - Per-page canonical and robots
+   - Per-page OG image absolute URL (if assets/img/og.* exists)
    - Preserves file timestamps so baking doesn't change dates
    - PowerShell 5.1-safe
    ============================================ #>
@@ -107,7 +109,7 @@ function Generate-RedirectStubs([string]$redirectsJson,[string]$root,[string]$ba
     $from=$null; $to=$null; $code=301
     if($r.PSObject.Properties.Name -contains 'from'){$from=[string]$r.from}
     if($r.PSObject.Properties.Name -contains 'to'){$to=[string]$r.to}
-    if($r.PSObject.Properties.Name -contains 'code'){ try{$code=[int]$r.code}catch{$code=301} }
+    if($r.PSObject.Properties.Name -contains 'code'){ try{$code=[int]$r.code} catch { $code=301 } }
     if([string]::IsNullOrWhiteSpace($from) -or [string]::IsNullOrWhiteSpace($to)){continue}
     if($from -match '\*'){continue}
     $outPath=Make-RedirectOutputPath $from $root; $abs=Resolve-RedirectTarget $to $base
@@ -382,8 +384,7 @@ function Inject-PostNav([string]$content, $prev, $next){
   }
 }
 
-# ------ Suggested posts (NEW) ------
-# Stopwords (also strip brand/common words so everything isn't "related")
+# ------ Suggested posts ------
 $script:ASD_Stop = @{}
 foreach($w in @('the','a','an','and','or','for','with','from','to','of','in','on','how','what','is','are','vs','using','use','your','you','this','that','guide','worth','price','ace','ultra','premium')){
   $script:ASD_Stop[$w] = $true
@@ -430,7 +431,8 @@ function Build-RelatedList($posts,[string]$currentName,[int]$max=3){
       if(-not $already){ $pick += $x }
     }
   }
-  return $pick[0..([Math]::Max(0,$pick.Count-1))]
+  if($pick.Count -le 0){ return @() }
+  return ($pick | Select-Object -First $max)
 }
 function Inject-RelatedSection([string]$content, $items){
   if([string]::IsNullOrWhiteSpace($content)){ return $content }
@@ -455,9 +457,19 @@ function Inject-RelatedSection([string]$content, $items){
 # ---------------- start ----------------
 $paths=Get-ASDPaths; $cfg=Get-ASDConfig
 $RootDir=$paths.Root; $LayoutPath=$paths.Layout; $BlogDir=$paths.Blog
-$Brand=$cfg.SiteName; $Money=$cfg.StoreUrl; $SiteDesc=$cfg.Description
-$Base=Normalize-BaseUrlLocal ([string]$cfg.BaseUrl)
-$Year=(Get-Date).Year
+
+# Robust brand/site mapping: supports new "SiteName" and old "Brand"
+if ($cfg.PSObject.Properties.Name -contains 'SiteName' -and -not [string]::IsNullOrWhiteSpace($cfg.SiteName)) {
+  $Brand = $cfg.SiteName
+} elseif ($cfg.PSObject.Properties.Name -contains 'Brand' -and -not [string]::IsNullOrWhiteSpace($cfg.Brand)) {
+  $Brand = $cfg.Brand
+} else {
+  $Brand = 'My Site'
+}
+$Money    = $cfg.StoreUrl
+$SiteDesc = $cfg.Description
+$Base     = Normalize-BaseUrlLocal ([string]$cfg.BaseUrl)
+$Year     = (Get-Date).Year
 
 Write-Host "[ASD] Baking... brand='$Brand' store='$Money' base='$Base'"
 
@@ -522,14 +534,13 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
       $pn = $prevNextMap[$_.Name]
       $content = Inject-PostNav -content $content -prev $pn.Prev -next $pn.Next
     }
-    # Suggested posts (related)
     $related = Build-RelatedList -posts $postsForFeed -currentName $_.Name -max 3
     if($related -and $related.Count -gt 0){
       $content = Inject-RelatedSection -content $content -items $related
     }
   }
 
-  # Title for layout
+  # Title for layout (H1 -> Title)
   $tm=[regex]::Match($content,'(?is)<h1[^>]*>(.*?)</h1>'); $pageTitle=$null
   if($tm.Success){$pageTitle=$tm.Groups[1].Value}else{$pageTitle=$_.BaseName}
 
@@ -544,7 +555,20 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
 
   $prefix=Get-RelPrefix -RootDir $RootDir -FilePath $_.FullName
 
-  $final=$Layout.Replace('{{CONTENT}}',$content).Replace('{{TITLE}}',$pageTitle).Replace('{{BRAND}}',$Brand).Replace('{{DESCRIPTION}}',$pageDesc).Replace('{{MONEY}}',$Money).Replace('{{YEAR}}',"$Year").Replace('{{PREFIX}}',$prefix)
+  # ---- Ordered replacements (always do {{PREFIX}} last) ----
+  $final = $Layout.Replace('{{CONTENT}}',     $content)
+  $final = $final.Replace('{{TITLE}}',       $pageTitle)
+  $final = $final.Replace('{{DESCRIPTION}}', $pageDesc)
+
+  # Support {{BRAND}} and {{SITE_NAME}} (either token in layout)
+  $final = $final.Replace('{{BRAND}}',     $Brand)
+  $final = $final.Replace('{{SITE_NAME}}', $Brand)
+
+  $final = $final.Replace('{{MONEY}}', $Money)
+  $final = $final.Replace('{{YEAR}}',  "$Year")
+
+  # Finally apply prefix
+  $final = $final.Replace('{{PREFIX}}', $prefix)
 
   # Robots
   $final=AddOrReplaceMetaRobots $final (DetermineRobotsForFile $_.FullName $raw)
@@ -558,11 +582,10 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   } else {
     $canonical = Build-Canonical -base $Base -relPath $rel
     $final = Ensure-CanonicalTag -html $final -href $canonical
-    # Rewrite root-absolute links to prefix-relative
     $final = Rewrite-RootLinks $final $prefix
   }
 
-  # OG image (absolute); runs after rewrites/canonical
+  # OG image (absolute)
   $final = Ensure-OgImageAbsolute -html $final -base $Base -root $RootDir
 
   $final=Normalize-DashesToPipe $final
