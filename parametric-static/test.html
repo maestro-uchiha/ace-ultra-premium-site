@@ -1,27 +1,26 @@
 ﻿<!doctype html>
 <html lang="en">
 <head>
+<link rel="canonical" href="https://maestro-uchiha.github.io/ace-ultra-premium-site/test.html">
+
+<meta name="robots" content="index,follow">
+
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <title>{{TITLE}} | {{SITE_NAME}}</title>
-  <meta name="description" content="{{DESCRIPTION}}">
-  <meta name="author" content="{{AUTHOR}}">
-
-  <!-- Canonical will be injected by bake.ps1 -->
-  <!-- Robots will be injected by bake.ps1 -->
-
-  <!-- Open Graph -->
-  <meta property="og:title" content="{{TITLE}} | {{SITE_NAME}}">
-  <meta property="og:description" content="{{DESCRIPTION}}">
-  <!-- Will be replaced by bake.ps1 with an ABSOLUTE URL if assets/img/og.(jpg|jpeg|png|webp) exists -->
-  <meta property="og:image" content="{{PREFIX}}assets/img/og.jpeg">
+  <title>Test Page | Ace Ultra Premium</title>
+  <meta name="description" content="This is a test page.">
+  <meta name="author" content="Maestro">
+<!-- Open Graph -->
+  <meta property="og:title" content="Test Page | Ace Ultra Premium">
+  <meta property="og:description" content="This is a test page.">
+<meta property="og:image" content="https://maestro-uchiha.github.io/ace-ultra-premium-site/assets/img/og.jpeg">
   <meta property="og:type" content="website">
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
 
-  <link rel="icon" href="{{PREFIX}}assets/favicon.ico">
+  <link rel="icon" href="assets/favicon.ico">
 
   <!-- Early theme boot (prevents flash) -->
   <script>
@@ -37,15 +36,13 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="{{PREFIX}}assets/css/style.css">
-
-  <!-- Feeds will be added by bake.ps1 if missing -->
-  <link rel="alternate" type="application/rss+xml"  title="{{SITE_NAME}} RSS"  href="{{PREFIX}}feed.xml">
-  <link rel="alternate" type="application/atom+xml" title="{{SITE_NAME}} Atom" href="{{PREFIX}}atom.xml">
+  <link rel="stylesheet" href="assets/css/style.css">
+<link rel="alternate" type="application/rss+xml"  title="Ace Ultra Premium RSS"  href="feed.xml">
+  <link rel="alternate" type="application/atom+xml" title="Ace Ultra Premium Atom" href="atom.xml">
 </head>
 <body>
   <header>
-    <h1><a href="{{PREFIX}}index.html">{{SITE_NAME}}</a></h1>
+    <h1><a href="index.html">Ace Ultra Premium</a></h1>
 
     <!-- Mobile toggle -->
     <button id="navToggle" class="nav-toggle"
@@ -55,33 +52,36 @@
 
     <nav id="site-nav">
       <ul>
-        <li><a href="{{PREFIX}}index.html">Home</a></li>
-        <li><a href="{{PREFIX}}blog/">Blog</a></li>
-        <li><a href="{{PREFIX}}search.html">Search</a></li>
-        <li><a href="{{PREFIX}}about.html">About</a></li>
-        <li><a href="{{PREFIX}}contact.html">Contact</a></li>
-        <li><a href="{{PREFIX}}legal/privacy.html">Privacy</a></li>
-        <li><a href="{{PREFIX}}legal/terms.html">Terms</a></li>
-        <li><a href="{{PREFIX}}sitemap.html">Sitemap</a></li>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="blog/">Blog</a></li>
+        <li><a href="search.html">Search</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="contact.html">Contact</a></li>
+        <li><a href="legal/privacy.html">Privacy</a></li>
+        <li><a href="legal/terms.html">Terms</a></li>
+        <li><a href="sitemap.html">Sitemap</a></li>
       </ul>
     </nav>
   </header>
 
   <!-- KEEP CONTENT ON ONE LINE TO AVOID WHITESPACE GROWTH -->
-  <main>{{CONTENT}}</main>
+  <main><!-- KEEP CONTENT ON ONE LINE TO AVOID WHITESPACE GROWTH -->
+<h1>Test Page</h1>
+<p>Write your page content here.</p>
+<!-- ASD:DESCRIPTION: This is a test page. --></main>
 
   <footer>
     <p>
-      <a href="{{PREFIX}}index.html">Home</a> |
-      <a href="{{PREFIX}}blog/">Blog</a> |
-      <a href="{{PREFIX}}search.html">Search</a> |
-      <a href="{{PREFIX}}about.html">About</a> |
-      <a href="{{PREFIX}}contact.html">Contact</a> |
-      <a href="{{PREFIX}}legal/privacy.html">Privacy</a> |
-      <a href="{{PREFIX}}legal/terms.html">Terms</a> |
-      <a href="{{PREFIX}}sitemap.html">Sitemap</a>
+      <a href="index.html">Home</a> |
+      <a href="blog/">Blog</a> |
+      <a href="search.html">Search</a> |
+      <a href="about.html">About</a> |
+      <a href="contact.html">Contact</a> |
+      <a href="legal/privacy.html">Privacy</a> |
+      <a href="legal/terms.html">Terms</a> |
+      <a href="sitemap.html">Sitemap</a>
     </p>
-    <p>&copy; {{YEAR}} {{SITE_NAME}}. All rights reserved.</p>
+    <p>&copy; 2025 Ace Ultra Premium. All rights reserved.</p>
   </footer>
 
   <!-- Single rectangular theme toggle -->
@@ -114,3 +114,4 @@
   </script>
 </body>
 </html>
+

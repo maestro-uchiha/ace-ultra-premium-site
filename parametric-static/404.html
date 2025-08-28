@@ -1,20 +1,18 @@
 ﻿<!doctype html>
 <html lang="en">
 <head>
-<link rel="alternate" type="application/atom+xml" title="Ace Ultra Premium Atom" href="/ace-ultra-premium-site/atom.xml">
-
 <meta name="robots" content="noindex,nofollow">
 
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <title>404 - Not Found | Ace Ultra Premium</title>
+  <title>404 | Not Found | Ace Ultra Premium</title>
   <meta name="description" content="Premium Ace Ultra Premium | quality, reliability, trust.">
-
-  <!-- Open Graph -->
-  <meta property="og:title" content="404 - Not Found | Ace Ultra Premium">
+  <meta name="author" content="Maestro">
+<!-- Open Graph -->
+  <meta property="og:title" content="404 | Not Found | Ace Ultra Premium">
   <meta property="og:description" content="Premium Ace Ultra Premium | quality, reliability, trust.">
-  <meta property="og:image" content="https://maestro-uchiha.github.io/ace-ultra-premium-site/assets/img/og.jpeg">
+<meta property="og:image" content="https://maestro-uchiha.github.io/ace-ultra-premium-site/assets/img/og.jpeg">
   <meta property="og:type" content="website">
 
   <!-- Twitter -->
@@ -37,19 +35,19 @@
   </script>
 
   <link rel="stylesheet" href="/ace-ultra-premium-site/assets/css/style.css">
-  <link rel="alternate" type="application/rss+xml" title="Ace Ultra Premium Blog" href="/ace-ultra-premium-site/feed.xml">
+<link rel="alternate" type="application/rss+xml"  title="Ace Ultra Premium RSS"  href="/ace-ultra-premium-site/feed.xml">
+  <link rel="alternate" type="application/atom+xml" title="Ace Ultra Premium Atom" href="/ace-ultra-premium-site/atom.xml">
 </head>
 <body>
   <header>
     <h1><a href="/ace-ultra-premium-site/index.html">Ace Ultra Premium</a></h1>
 
-    <!-- Mobile toggle (CSS bars, ASCII-safe) -->
+    <!-- Mobile toggle -->
     <button id="navToggle" class="nav-toggle"
             aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
       <span class="bar"></span><span class="bar"></span><span class="bar"></span>
     </button>
 
-    <!-- Collapsible nav -->
     <nav id="site-nav">
       <ul>
         <li><a href="/ace-ultra-premium-site/index.html">Home</a></li>
@@ -65,7 +63,7 @@
   </header>
 
   <!-- KEEP CONTENT ON ONE LINE TO AVOID WHITESPACE GROWTH -->
-  <main><h1>404 - Not Found</h1>
+  <main><h1>404 | Not Found</h1>
     <p>That page doesn't exist. <a href="/ace-ultra-premium-site/index.html">Return home</a>.</p></main>
 
   <footer>
@@ -82,7 +80,7 @@
     <p>&copy; 2025 Ace Ultra Premium. All rights reserved.</p>
   </footer>
 
-  <!-- Single rectangular theme toggle (inline onclick so it ALWAYS works) -->
+  <!-- Single rectangular theme toggle -->
   <button
     class="asd-theme-toggle"
     id="asd-theme-toggle"
@@ -105,15 +103,9 @@
         nav.classList.toggle('open', open);
         btn.classList.toggle('is-active', open);
       }
-      btn.addEventListener('click', function () {
-        set(btn.getAttribute('aria-expanded') !== 'true');
-      });
-      document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') set(false);
-      });
-      nav.addEventListener('click', function (e) {
-        if (e.target && e.target.tagName === 'A') set(false);
-      });
+      btn.addEventListener('click', function () { set(btn.getAttribute('aria-expanded') !== 'true'); });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') set(false); });
+      nav.addEventListener('click', function (e) { if (e.target && e.target.tagName === 'A') set(false); });
     })();
   </script>
 </body>

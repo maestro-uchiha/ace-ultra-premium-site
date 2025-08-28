@@ -46,8 +46,13 @@ function Show-Menu {
   Write-Host "  7) Redirects          8) Build pagination      9) Bake"
   Write-Host " 10) Build + Bake      11) Check links          12) List posts"
   Write-Host " 13) Open post         14) Edit config.json     15) Commit all (git)"
+  Write-Host " -- Pages ------------------------------------------------------------"
+  Write-Host " 16) New page          17) Edit page            18) Rename page"
+  Write-Host " 19) Delete page       20) List pages"
   Write-Host "  q) Quit"
 }
+
+# ---------------- Posts actions ----------------
 
 function Do-NewPost {
   $title = Ask "Title"
@@ -173,8 +178,12 @@ function Do-EditConfig {
   catch { notepad.exe $cfgPath }
 }
 
-# ------- Git helpers -------
-function Test-GitAvailable { try { $null = (& git --version) 2>$null; return ($LASTEXITCODE -eq 0) } catch { return $false } }
+# ---------------- Git helpers (Commit All) ----------------
+
+function Test-GitAvailable {
+  try { $null = (& git --version) 2>$null; return ($LASTEXITCODE -eq 0) } catch { return $false }
+}
+
 function Get-GitRoot {
   try {
     $root = (& git rev-parse --show-toplevel) 2>$null
@@ -182,10 +191,13 @@ function Get-GitRoot {
   } catch {}
   return $null
 }
-function Git-Run { param([string[]]$GitArgs,[switch]$Capture)
+
+function Git-Run {
+  param([string[]]$GitArgs,[switch]$Capture)
   if ($Capture) { $out = & git @GitArgs 2>&1; return @{ code = $LASTEXITCODE; out = $out } }
   else          { & git @GitArgs;         return @{ code = $LASTEXITCODE; out = $null } }
 }
+
 function Do-CommitAll {
   if (-not (Test-GitAvailable)) { Write-Error "git is not installed or not on PATH."; return }
   $repoRoot = Get-GitRoot
@@ -230,6 +242,176 @@ function Do-CommitAll {
   } finally { Pop-Location }
 }
 
+# ---------------- Pages helpers/actions ----------------
+
+function Normalize-PageRel([string]$p){
+  $p = ($p -replace '\\','/').Trim()
+  if ([string]::IsNullOrWhiteSpace($p)) { return $p }
+  if ($p -notlike '*.html') { $p += '.html' }
+  return $p
+}
+
+function Clamp160([string]$s){
+  if ([string]::IsNullOrWhiteSpace($s)) { return "" }
+  $t = [regex]::Replace($s,'\s+',' ').Trim()
+  if ($t.Length -gt 160) { $t = $t.Substring(0,160) }
+  return $t
+}
+
+function Do-NewPage {
+  $path = Ask "Page path to create (e.g. about or legal/privacy)"
+  $title = Ask "Title"
+  $desc  = Ask "Description" ""
+  $body  = Ask "BodyHtml (blank for default)" ""
+
+  $rel = Normalize-PageRel $path
+  if ([string]::IsNullOrWhiteSpace($rel)) { Write-Error "Path is required."; return }
+  $fs  = Join-Path $S.Root $rel
+  $dir = Split-Path -Parent $fs
+  if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+
+  if ([string]::IsNullOrWhiteSpace($body)) {
+    $body = @"
+<!-- KEEP CONTENT ON ONE LINE TO AVOID WHITESPACE GROWTH -->
+<h1>$title</h1>
+<p>Write your page content here.</p>
+"@
+  }
+
+  $descClamped = Clamp160 $desc
+  $content = @"
+<!-- ASD:CONTENT_START -->
+$body
+<!-- ASD:DESCRIPTION: $descClamped -->
+<!-- ASD:CONTENT_END -->
+"@
+  Set-Content -Encoding UTF8 -LiteralPath $fs $content
+  Write-Host "[ASD] New page created: $rel"
+}
+
+function Do-EditPage {
+  $path = Ask "Page path to edit (e.g. about or legal/privacy)"
+  $t = Ask "New Title (blank=keep)" ""
+  $d = Ask "New Description (blank=keep)" ""
+  $b = Ask "New BodyHtml (blank=keep)" ""
+  $a = ""  # optional override; leave blank to use config
+
+  $ps = @{ Path = $path }
+  if (-not [string]::IsNullOrWhiteSpace($t)) { $ps.Title       = $t }
+  if (-not [string]::IsNullOrWhiteSpace($d)) { $ps.Description = $d }
+  if (-not [string]::IsNullOrWhiteSpace($b)) { $ps.BodyHtml    = $b }
+  if (-not [string]::IsNullOrWhiteSpace($a)) { $ps.Author      = $a }
+
+  & (Join-Path $ScriptsDir "update-page.ps1") @ps
+}
+
+function Do-RenamePage {
+  $old = Ask "Old page path (e.g. about or legal/privacy)"
+  $new = Ask "New page path (e.g. about-us or legal/policy)"
+  $keep = Ask-YesNo "Leave redirect file in place?" $true
+
+  $relOld = Normalize-PageRel $old
+  $relNew = Normalize-PageRel $new
+  if ([string]::IsNullOrWhiteSpace($relOld) -or [string]::IsNullOrWhiteSpace($relNew)) { Write-Error "Both paths are required."; return }
+
+  $script = Join-Path $ScriptsDir "rename-page.ps1"
+  if (Test-Path $script) {
+    $switch = @()
+    if ($keep) { $switch = @('-LeaveRedirect') }
+    & $script -OldPath $relOld -NewPath $relNew @switch
+    return
+  }
+
+  # Fallback inline (if rename-page.ps1 isn't present)
+  $fsOld = Join-Path $S.Root $relOld
+  $fsNew = Join-Path $S.Root $relNew
+  if (-not (Test-Path $fsOld)) { Write-Error "Source not found: $relOld"; return }
+  $dirNew = Split-Path -Parent $fsNew
+  if (-not (Test-Path $dirNew)) { New-Item -ItemType Directory -Force -Path $dirNew | Out-Null }
+
+  Move-Item -Force $fsOld $fsNew
+  Write-Host "[ASD] Renamed $relOld -> $relNew"
+
+  if ($keep) {
+    function _NormBase([string]$b){
+      if ([string]::IsNullOrWhiteSpace($b)) { return "/" }
+      $x = $b.Trim() -replace '^/+(?=https?:)','' -replace '^((?:https?):)/{1,}','$1//'
+      $m = [regex]::Match($x,'^(https?://)(.+)$')
+      if ($m.Success) { $x = $m.Groups[1].Value + $m.Groups[2].Value.TrimStart('/'); if (-not $x.EndsWith('/')){$x+='/'}; return $x }
+      return '/' + ($x.Trim('/')) + '/'
+    }
+    $base = _NormBase ([string]$cfg.BaseUrl)
+    $target =
+      if ($base -match '^[a-z]+://') {
+        try { (New-Object System.Uri((New-Object System.Uri($base)), $relNew)).AbsoluteUri }
+        catch { $base.TrimEnd('/') + '/' + ($relNew.TrimStart('/')) }
+      } else { $base.TrimEnd('/') + '/' + ($relNew.TrimStart('/')) }
+
+    $fsOldDir = Split-Path -Parent $fsOld
+    if (-not (Test-Path $fsOldDir)) { New-Item -ItemType Directory -Force -Path $fsOldDir | Out-Null }
+    $esc = $target -replace '&','&amp;' -replace '<','&lt;' -replace '>','&gt;' -replace '"','&quot;'
+    $jsu = $target -replace '\\','\\' -replace "'","\'"
+    $html = @"
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><title>Redirecting…</title>
+<meta name="robots" content="noindex">
+<meta http-equiv="refresh" content="0;url=$esc">
+<script>location.replace('$jsu');</script>
+</head><body>
+<!-- ASD:REDIRECT to="$esc" code="301" -->
+<p>If you are not redirected, <a href="$esc">click here</a>.</p>
+</body></html>
+"@
+    Set-Content -Encoding UTF8 -LiteralPath $fsOld $html
+    $redir = Join-Path $ScriptsDir "redirects.ps1"
+    if (Test-Path $redir) {
+      try { & $redir -Add -From ("/" + $relOld.TrimStart('/')) -To ("/" + $relNew.TrimStart('/')) -Code 301 } catch {}
+    }
+    Write-Host "[ASD] Redirect stub created at $relOld -> $target"
+  }
+}
+
+function Do-DeletePage {
+  $path = Ask "Page path to delete (e.g. about or legal/privacy)"
+  $rel  = Normalize-PageRel $path
+  if ([string]::IsNullOrWhiteSpace($rel)) { Write-Error "Path is required."; return }
+
+  $fs = Join-Path $S.Root $rel
+  if (-not (Test-Path $fs)) { Write-Error "Page not found: $rel"; return }
+
+  if (-not (Ask-YesNo "Are you sure you want to delete '$rel'?" $true)) {
+    Write-Host "[ASD] Cancelled."
+    return
+  }
+
+  try {
+    Remove-Item -LiteralPath $fs -Force
+    Write-Host "[ASD] Deleted page: $rel"
+
+    # If the containing directory is now empty, clean it up (but never delete the site root)
+    $dir = Split-Path -Parent $fs
+    if ($dir -and (Test-Path $dir) -and ($dir -ne $S.Root)) {
+      $hasStuff = Get-ChildItem -LiteralPath $dir -Force | Select-Object -First 1
+      if (-not $hasStuff) {
+        try { Remove-Item -LiteralPath $dir -Force } catch {}
+      }
+    }
+  } catch {
+    Write-Error "Failed to delete: $($_.Exception.Message)"
+  }
+}
+
+function Do-ListPages {
+  if (-not (Test-Path $S.Root)) { return }
+  $skip = '\\blog\\|\\assets\\|\\partials\\'
+  Get-ChildItem -Path $S.Root -Recurse -File -Filter *.html |
+    Where-Object { $_.FullName -notmatch $skip } |
+    ForEach-Object {
+      $rel = $_.FullName.Substring($S.Root.Length + 1) -replace '\\','/'
+      Write-Host $rel
+    }
+}
+
 # -------- Main loop --------
 while ($true) {
   Show-Menu
@@ -250,6 +432,11 @@ while ($true) {
     '13' { Do-OpenPost }
     '14' { Do-EditConfig }
     '15' { Do-CommitAll }
+    '16' { Do-NewPage }
+    '17' { Do-EditPage }
+    '18' { Do-RenamePage }
+    '19' { Do-DeletePage }
+    '20' { Do-ListPages }
     'q'  { break }
     'Q'  { break }
     default { Write-Host "Unknown choice." }

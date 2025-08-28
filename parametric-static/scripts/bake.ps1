@@ -10,11 +10,9 @@
    - Generates sitemap.xml, robots.txt (single Sitemap line)
    - Generates RSS (feed.xml) and Atom (atom.xml)
    - Builds assets/search-index.json for search.html
-   - Injects Prev/Next post links into blog posts if missing
-   - Injects Suggested posts (related) into blog posts if missing
-   - Per-page canonical and robots
-   - Per-page OG image absolute URL (if assets/img/og.* exists)
+   - Injects Prev/Next post links and Suggested posts
    - Preserves file timestamps so baking doesn't change dates
+   - Ensures {{AUTHOR}} from config.json and cleans “will be injected” comments
    - PowerShell 5.1-safe
    ============================================ #>
 
@@ -109,7 +107,7 @@ function Generate-RedirectStubs([string]$redirectsJson,[string]$root,[string]$ba
     $from=$null; $to=$null; $code=301
     if($r.PSObject.Properties.Name -contains 'from'){$from=[string]$r.from}
     if($r.PSObject.Properties.Name -contains 'to'){$to=[string]$r.to}
-    if($r.PSObject.Properties.Name -contains 'code'){ try{$code=[int]$r.code} catch { $code=301 } }
+    if($r.PSObject.Properties.Name -contains 'code'){ try{$code=[int]$r.code}catch{$code=301} }
     if([string]::IsNullOrWhiteSpace($from) -or [string]::IsNullOrWhiteSpace($to)){continue}
     if($from -match '\*'){continue}
     $outPath=Make-RedirectOutputPath $from $root; $abs=Resolve-RedirectTarget $to $base
@@ -196,9 +194,7 @@ function Get-ASDDescription([string]$raw,[string]$content){
 function Build-Canonical([string]$base,[string]$relPath){
   if([string]::IsNullOrWhiteSpace($relPath)){ return $base }
   $rel = $relPath.Replace('\','/')
-  if($rel -ieq 'index.html'){
-    return Collapse-DoubleSlashesPreserveSchemeLocal($base)
-  }
+  if($rel -ieq 'index.html'){ return Collapse-DoubleSlashesPreserveSchemeLocal($base) }
   $m = [regex]::Match($rel,'^(.+)/index\.html$')
   if($m.Success){
     if($base -match '^[a-z]+://'){
@@ -238,6 +234,32 @@ function Ensure-OgImageAbsolute([string]$html,[string]$base,[string]$root){
   $rx  = [regex]'(?is)<meta\s+property\s*=\s*["'']og:image["''][^>]*>'
   if ($rx.IsMatch($html)) { $html = $rx.Replace($html,$tag,1) } else { $html = Insert-AfterHeadOpen $html @($tag) }
   return $html
+}
+
+# ------ “bake helper” cleanups ------
+function Remove-InjectorComments([string]$html){
+  if([string]::IsNullOrWhiteSpace($html)){ return $html }
+  $html = [regex]::Replace($html,'(?im)^\s*<!--\s*Canonical will be injected by bake\.ps1\s*-->\s*\r?\n?','')
+  $html = [regex]::Replace($html,'(?im)^\s*<!--\s*Robots will be injected by bake\.ps1\s*-->\s*\r?\n?','')
+  $html = [regex]::Replace($html,'(?im)^\s*<!--\s*Feeds will be added by bake\.ps1 if missing\s*-->\s*\r?\n?','')
+  $html = [regex]::Replace($html,'(?im)^\s*<!--\s*Will be replaced by bake\.ps1.*?-->\s*\r?\n?','')
+  return $html
+}
+function Normalize-DashesToPipe([string]$html){
+  if([string]::IsNullOrWhiteSpace($html)){ return $html }
+  return ($html -replace '—','|' -replace '–','|' -replace ' - ',' | ')
+}
+function SlugToPretty([string]$name){
+  if([string]::IsNullOrWhiteSpace($name)){ return "" }
+  $base = [IO.Path]::GetFileNameWithoutExtension($name)
+  $base = ($base -replace '[-_]+',' ').Trim()
+  $out = ($base -split '\s+') | ForEach-Object { if($_.Length -gt 0){ $_.Substring(0,1).ToUpper() + $_.Substring(1) } else { $_ } }
+  return ($out -join ' ')
+}
+function Normalize-PageTitle([string]$maybe,[string]$fileBase){
+  if([string]::IsNullOrWhiteSpace($maybe)){ return (SlugToPretty $fileBase) }
+  if($maybe -match '^\s*-\s*Title\s*$'){ return (SlugToPretty $fileBase) }
+  return $maybe
 }
 
 # ------ Feed builders (RSS + Atom) ------
@@ -319,11 +341,8 @@ function Build-SearchIndex($BlogDir,$RootDir){
     $mTitle=[regex]::Match($html,'(?is)<title>(.*?)</title>')
     if($mTitle.Success){ $title=$mTitle.Groups[1].Value }
     $title=Normalize-DashesToPipe $title
-
     $date = Get-MetaDateFromHtml $html
     if(-not $date){ $date = $f.CreationTime.ToString('yyyy-MM-dd') }
-
-    # Prefer ASD:DESCRIPTION; else meta; else first <p>
     $desc = $null
     $mDesc = [regex]::Match($html,'(?is)<!--\s*ASD:DESCRIPTION:\s*(.*?)\s*-->')
     if($mDesc.Success){ $desc = $mDesc.Groups[1].Value.Trim() }
@@ -334,15 +353,8 @@ function Build-SearchIndex($BlogDir,$RootDir){
     }
     $desc = [regex]::Replace($desc,'\s+',' ').Trim()
     if($desc.Length -gt 240){ $desc = $desc.Substring(0,240) + '…' }
-
-    $rows += [pscustomobject]@{
-      title = $title
-      url   = ('blog/' + $f.Name)
-      date  = $date
-      desc  = $desc
-    }
+    $rows += [pscustomobject]@{ title = $title; url = ('blog/' + $f.Name); date = $date; desc = $desc }
   }
-
   $assetsDir = Join-Path $RootDir 'assets'
   if(-not (Test-Path $assetsDir)){ New-Item -ItemType Directory -Force -Path $assetsDir | Out-Null }
   $outPath = Join-Path $assetsDir 'search-index.json'
@@ -351,7 +363,7 @@ function Build-SearchIndex($BlogDir,$RootDir){
   Write-Host "[ASD] search-index.json built ($($rows.Count) items)"
 }
 
-# ------ Prev/Next helpers ------
+# ------ Prev/Next + Related ------
 function Build-PrevNextMap($posts){
   $map = @{}
   $count = $posts.Count
@@ -363,32 +375,8 @@ function Build-PrevNextMap($posts){
   }
   return $map
 }
-function Inject-PostNav([string]$content, $prev, $next){
-  if([string]::IsNullOrWhiteSpace($content)){ return $content }
-  if([regex]::IsMatch($content,'(?is)<div\s+class\s*=\s*["'']post-nav["'']')){ return $content }
-  $prevHtml = '<span></span>'
-  $nextHtml = '<span></span>'
-  if($prev -ne $null){
-    $prevHtml = '<a class="prev" href="/blog/' + $prev.Name + '"><span>← ' + (HtmlEscape $prev.Title) + '</span></a>'
-  }
-  if($next -ne $null){
-    $nextHtml = '<a class="next" href="/blog/' + $next.Name + '"><span>' + (HtmlEscape $next.Title) + ' →</span></a>'
-  }
-  $nav = '<div class="post-nav">' + $prevHtml + '<span></span>' + $nextHtml + '</div>'
-  $m=[regex]::Match($content,'(?is)</article>')
-  if($m.Success){
-    $idx=$m.Index
-    return $content.Substring(0,$idx) + $nav + $content.Substring($idx)
-  } else {
-    return $content + $nav
-  }
-}
-
-# ------ Suggested posts ------
-$script:ASD_Stop = @{}
-foreach($w in @('the','a','an','and','or','for','with','from','to','of','in','on','how','what','is','are','vs','using','use','your','you','this','that','guide','worth','price','ace','ultra','premium')){
-  $script:ASD_Stop[$w] = $true
-}
+# Stopwords
+$script:ASD_Stop = @{}; foreach($w in @('the','a','an','and','or','for','with','from','to','of','in','on','how','what','is','are','vs','using','use','your','you','this','that','guide','worth','price','ace','ultra','premium')){$script:ASD_Stop[$w]=$true}
 function Get-TitleTokens([string]$t){
   if([string]::IsNullOrWhiteSpace($t)){ return @() }
   $s = $t.ToLowerInvariant()
@@ -407,7 +395,6 @@ function Build-RelatedList($posts,[string]$currentName,[int]$max=3){
   foreach($p in $posts){ if($p.Name -eq $currentName){ $current=$p; break } }
   if($null -eq $current){ return @() }
   $curTok = Get-TitleTokens $current.Title
-
   $scored = @()
   foreach($p in $posts){
     if($p.Name -eq $currentName){ continue }
@@ -416,60 +403,50 @@ function Build-RelatedList($posts,[string]$currentName,[int]$max=3){
     foreach($t in $tok){ if($curTok -contains $t){ $score++ } }
     $scored += [pscustomobject]@{ Name=$p.Name; Title=$p.Title; Date=$p.Date; DateText=$p.DateText; Score=$score }
   }
-
   $top = $scored | Sort-Object @{Expression='Score';Descending=$true}, @{Expression='Date';Descending=$true}
   $pick = @()
-  foreach($x in $top){
-    if($x.Score -gt 0){ $pick += $x }
-    if($pick.Count -ge $max){ break }
-  }
+  foreach($x in $top){ if($x.Score -gt 0){ $pick += $x }; if($pick.Count -ge $max){ break } }
   if($pick.Count -lt $max){
-    foreach($x in $top){
-      if($pick.Count -ge $max){ break }
-      $already = $false
-      foreach($y in $pick){ if($y.Name -eq $x.Name){ $already=$true; break } }
-      if(-not $already){ $pick += $x }
-    }
+    foreach($x in $top){ if($pick.Count -ge $max){ break }; if(-not ($pick | Where-Object { $_.Name -eq $x.Name })) { $pick += $x } }
   }
-  if($pick.Count -le 0){ return @() }
-  return ($pick | Select-Object -First $max)
+  return $pick[0..([Math]::Max(0,$pick.Count-1))]
+}
+function Inject-PostNav([string]$content, $prev, $next){
+  if([string]::IsNullOrWhiteSpace($content)){ return $content }
+  if([regex]::IsMatch($content,'(?is)<div\s+class\s*=\s*["'']post-nav["'']')){ return $content }
+  $prevHtml = '<span></span>'; $nextHtml = '<span></span>'
+  if($prev -ne $null){ $prevHtml = '<a class="prev" href="/blog/' + $prev.Name + '"><span>← ' + (HtmlEscape $prev.Title) + '</span></a>' }
+  if($next -ne $null){ $nextHtml = '<a class="next" href="/blog/' + $next.Name + '"><span>' + (HtmlEscape $next.Title) + ' →</span></a>' }
+  $nav = '<div class="post-nav">' + $prevHtml + '<span></span>' + $nextHtml + '</div>'
+  $m=[regex]::Match($content,'(?is)</article>')
+  if($m.Success){ $idx=$m.Index; return $content.Substring(0,$idx) + $nav + $content.Substring($idx) } else { return $content + $nav }
 }
 function Inject-RelatedSection([string]$content, $items){
   if([string]::IsNullOrWhiteSpace($content)){ return $content }
   if([regex]::IsMatch($content,'(?is)<div\s+class\s*=\s*["'']related["'']')){ return $content }
   if($null -eq $items -or $items.Count -lt 1){ return $content }
-
   $lis = New-Object System.Collections.Generic.List[string]
-  foreach($it in $items){
-    $lis.Add('<li><a href="/blog/' + $it.Name + '">' + (HtmlEscape $it.Title) + '</a><small> | ' + $it.DateText + '</small></li>') | Out-Null
-  }
+  foreach($it in $items){ $lis.Add('<li><a href="/blog/' + $it.Name + '">' + (HtmlEscape $it.Title) + '</a><small> | ' + $it.DateText + '</small></li>') | Out-Null }
   $html = '<div class="related"><h2>Suggested posts</h2><ul class="posts">' + ([string]::Join('', $lis)) + '</ul></div>'
-
   $m=[regex]::Match($content,'(?is)</article>')
-  if($m.Success){
-    $idx=$m.Index
-    return $content.Substring(0,$idx) + $html + $content.Substring($idx)
-  } else {
-    return $content + $html
-  }
+  if($m.Success){ $idx=$m.Index; return $content.Substring(0,$idx) + $html + $content.Substring($idx) } else { return $content + $html }
 }
 
 # ---------------- start ----------------
 $paths=Get-ASDPaths; $cfg=Get-ASDConfig
 $RootDir=$paths.Root; $LayoutPath=$paths.Layout; $BlogDir=$paths.Blog
-
-# Robust brand/site mapping: supports new "SiteName" and old "Brand"
-if ($cfg.PSObject.Properties.Name -contains 'SiteName' -and -not [string]::IsNullOrWhiteSpace($cfg.SiteName)) {
-  $Brand = $cfg.SiteName
-} elseif ($cfg.PSObject.Properties.Name -contains 'Brand' -and -not [string]::IsNullOrWhiteSpace($cfg.Brand)) {
-  $Brand = $cfg.Brand
-} else {
-  $Brand = 'My Site'
+$Brand=$cfg.SiteName; $Money=$cfg.StoreUrl; $SiteDesc=$cfg.Description
+# AUTHOR from config
+$Author = ''
+if ($cfg.PSObject.Properties.Name -contains 'AuthorName' -and -not [string]::IsNullOrWhiteSpace($cfg.AuthorName)) { $Author = [string]$cfg.AuthorName }
+elseif ($cfg.PSObject.Properties.Name -contains 'author' -and $null -ne $cfg.author) {
+  if ($cfg.author.PSObject.Properties.Name -contains 'name' -and -not [string]::IsNullOrWhiteSpace($cfg.author.name)) { $Author = [string]$cfg.author.name }
+  elseif ($cfg.author.PSObject.Properties.Name -contains 'Name' -and -not [string]::IsNullOrWhiteSpace($cfg.author.Name)) { $Author = [string]$cfg.author.Name }
 }
-$Money    = $cfg.StoreUrl
-$SiteDesc = $cfg.Description
-$Base     = Normalize-BaseUrlLocal ([string]$cfg.BaseUrl)
-$Year     = (Get-Date).Year
+if ([string]::IsNullOrWhiteSpace($Author)) { $Author = 'Maestro' }
+
+$Base=Normalize-BaseUrlLocal ([string]$cfg.BaseUrl)
+$Year=(Get-Date).Year
 
 Write-Host "[ASD] Baking... brand='$Brand' store='$Money' base='$Base'"
 
@@ -540,9 +517,19 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
     }
   }
 
-  # Title for layout (H1 -> Title)
+  # Title for layout (ignore placeholder -Title)
   $tm=[regex]::Match($content,'(?is)<h1[^>]*>(.*?)</h1>'); $pageTitle=$null
-  if($tm.Success){$pageTitle=$tm.Groups[1].Value}else{$pageTitle=$_.BaseName}
+  if($tm.Success){
+    $inner = ($tm.Groups[1].Value -replace '\s+',' ').Trim()
+    $pageTitle = Normalize-PageTitle $inner $_.BaseName
+    if($inner -match '^\s*-\s*Title\s*$'){
+      # also fix the h1 in content so it doesn't keep leaking
+      $fixed = HtmlEscape (SlugToPretty $_.BaseName)
+      $content = [regex]::Replace($content,'(?is)(<h1[^>]*>)(.*?)(</h1>)',{ param($m) $m.Groups[1].Value + $fixed + $m.Groups[3].Value },1)
+    }
+  } else {
+    $pageTitle = SlugToPretty $_.BaseName
+  }
 
   # Description for layout
   $pageDesc = Get-ASDDescription -raw $raw -content $content
@@ -555,20 +542,15 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
 
   $prefix=Get-RelPrefix -RootDir $RootDir -FilePath $_.FullName
 
-  # ---- Ordered replacements (always do {{PREFIX}} last) ----
-  $final = $Layout.Replace('{{CONTENT}}',     $content)
-  $final = $final.Replace('{{TITLE}}',       $pageTitle)
-  $final = $final.Replace('{{DESCRIPTION}}', $pageDesc)
-
-  # Support {{BRAND}} and {{SITE_NAME}} (either token in layout)
-  $final = $final.Replace('{{BRAND}}',     $Brand)
-  $final = $final.Replace('{{SITE_NAME}}', $Brand)
-
-  $final = $final.Replace('{{MONEY}}', $Money)
-  $final = $final.Replace('{{YEAR}}',  "$Year")
-
-  # Finally apply prefix
-  $final = $final.Replace('{{PREFIX}}', $prefix)
+  $final=$Layout.Replace('{{CONTENT}}',$content)
+  $final=$final.Replace('{{TITLE}}',$pageTitle)
+  $final=$final.Replace('{{DESCRIPTION}}',$pageDesc)
+  $final=$final.Replace('{{BRAND}}',$Brand)
+  $final=$final.Replace('{{SITE_NAME}}',$Brand)
+  $final=$final.Replace('{{MONEY}}',$Money)
+  $final=$final.Replace('{{YEAR}}',"$Year")
+  $final=$final.Replace('{{PREFIX}}',$prefix)
+  $final=$final.Replace('{{AUTHOR}}',$Author)
 
   # Robots
   $final=AddOrReplaceMetaRobots $final (DetermineRobotsForFile $_.FullName $raw)
@@ -582,13 +564,16 @@ Get-ChildItem -Path $RootDir -Recurse -File | Where-Object { $_.Extension -eq ".
   } else {
     $canonical = Build-Canonical -base $Base -relPath $rel
     $final = Ensure-CanonicalTag -html $final -href $canonical
+    # Rewrite root-absolute links to prefix-relative
     $final = Rewrite-RootLinks $final $prefix
   }
 
-  # OG image (absolute)
+  # OG image (absolute); runs after rewrites/canonical
   $final = Ensure-OgImageAbsolute -html $final -base $Base -root $RootDir
 
-  $final=Normalize-DashesToPipe $final
+  # Clean helper comments & normalize dashes
+  $final = Remove-InjectorComments $final
+  $final = Normalize-DashesToPipe $final
 
   Set-Content -Encoding UTF8 $_.FullName $final
   Preserve-FileTimes $_.FullName $origC $origW
